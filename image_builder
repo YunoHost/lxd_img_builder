@@ -1,0 +1,164 @@
+#!/bin/bash
+
+function get_arch()
+{
+    local architecture
+    if uname -m | grep -q "arm64" || uname -m | grep -q "aarch64"; then
+        architecture="aarch64"
+    elif uname -m | grep -q "64"; then
+        architecture="amd64"
+    elif uname -m | grep -q "86"; then
+        architecture="i386"
+    elif uname -m | grep -q "arm"; then
+        architecture="armhf"
+    else
+        architecture="unknown"
+    fi
+    echo $architecture
+}
+
+function rebuild_base_lxc()
+{
+    local YNH_BRANCH=${1:-stable}
+    local DIST=${2:-buster}
+    local ARCH=${3:-amd64}
+    local img_name=$YNH_BRANCH-$DIST-$ARCH
+    
+    set -x
+    lxc info $img_name >/dev/null && lxc delete $img_name --force
+
+    if [ $(get_arch) = $ARCH ];
+    then
+        lxc launch images:debian/$DIST/$ARCH $img_name -c security.privileged=true -c security.nesting=true
+    else
+        lxc image info $img_name >/dev/null && lxc image delete $img_name
+
+        tmp_dir=$(mktemp -d)
+        pushd $tmp_dir
+
+        lxc image export images:debian/$DIST/$ARCH
+
+        tar xJf lxd.tar.xz
+        local current_arch=$(get_arch)
+        sed -i "0,/architecture: $ARCH/s//architecture: $current_arch/" metadata.yaml
+        tar cJf lxd.tar.xz metadata.yaml templates
+        lxc image import lxd.tar.xz rootfs.squashfs --alias $img_name
+        popd
+        rm -rf "$tmp_dir"
+
+        lxc launch $img_name $img_name -c security.privileged=true -c security.nesting=true
+    fi
+    sleep 5
+    
+    IN_LXC="lxc exec $img_name --"
+    
+    local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
+    $IN_LXC apt install curl -y
+    $IN_LXC /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
+    
+    $IN_LXC systemctl -q stop apt-daily.timer
+    $IN_LXC systemctl -q stop apt-daily-upgrade.timer
+    $IN_LXC systemctl -q stop apt-daily.service
+    $IN_LXC systemctl -q stop apt-daily-upgrade.service 
+    $IN_LXC systemctl -q disable apt-daily.timer
+    $IN_LXC systemctl -q disable apt-daily-upgrade.timer
+    $IN_LXC systemctl -q disable apt-daily.service
+    $IN_LXC systemctl -q disable apt-daily-upgrade.service
+    $IN_LXC rm -f /etc/cron.daily/apt-compat
+    $IN_LXC cp /bin/true /usr/lib/apt/apt.systemd.daily
+
+    # Publish ynh-dev image
+    local LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
+    lxc stop $img_name
+    lxc image delete $LXC_BASE
+    lxc publish $img_name --alias $LXC_BASE --public
+    lxc start $img_name
+    sleep 5
+
+    local YUNO_PWD="admin"
+    local DOMAIN="domain.tld"
+    local SUBDOMAIN="sub.$DOMAIN"
+    local TEST_USER="package_checker"
+
+    # Disable password strength check
+    $IN_LXC yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --force-password
+
+    $IN_LXC yunohost settings set security.password.admin.strength -v -1
+    $IN_LXC yunohost settings set security.password.user.strength -v -1
+
+    $IN_LXC yunohost domain add $SUBDOMAIN
+    TEST_USER_DISPLAY=${TEST_USER//"_"/""}
+    $IN_LXC yunohost user create $TEST_USER --firstname $TEST_USER_DISPLAY --mail $TEST_USER@$DOMAIN --lastname $TEST_USER_DISPLAY --password "$YUNO_PWD"
+
+    $IN_LXC yunohost --version
+
+    LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
+    lxc stop $img_name
+    lxc image delete $img_name
+    lxc publish $img_name --alias $LXC_BASE --public
+    lxc delete $img_name
+    set +x
+}
+
+function from_stable_to_another_version()
+{
+    local YNH_BRANCH=${1:-testing}
+    local DIST=${2:-buster}
+    local ARCH=${3:-amd64}
+    local OLD_LXC_BASE="ynh-dev-$DIST-$ARCH-stable-base"
+    local NEW_LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
+
+	if [ "$YNH_BRANCH" == "testing" ]; then
+		source="testing"
+	else
+		source="testing unstable"
+	fi
+
+    set -x
+    IN_LXC="lxc exec $NEW_LXC_BASE --"
+
+    lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
+    sleep 5
+
+    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ buster stable $source > /etc/apt/sources.list.d/yunohost.list"
+    $IN_LXC /bin/bash -c "apt-get update"
+    $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
+
+    lxc stop $NEW_LXC_BASE
+    lxc image delete $NEW_LXC_BASE
+    lxc publish $NEW_LXC_BASE --alias $NEW_LXC_BASE --public
+    lxc delete $NEW_LXC_BASE
+
+    OLD_LXC_BASE="ynh-appci-$DIST-$ARCH-stable-base"
+    NEW_LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
+    IN_LXC="lxc exec $NEW_LXC_BASE --"
+
+    lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
+    sleep 5
+
+    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ buster stable $source > /etc/apt/sources.list.d/yunohost.list"
+    $IN_LXC /bin/bash -c "apt-get update"
+    $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
+    
+    lxc stop $NEW_LXC_BASE
+    lxc image delete $NEW_LXC_BASE
+    lxc publish $NEW_LXC_BASE --alias $NEW_LXC_BASE --public
+    lxc delete $NEW_LXC_BASE
+    set +x
+}
+
+for YNH_BRANCH in "stable" "testing" "unstable"
+do
+    for DIST in "buster" # Add new debian version here
+    do
+        for ARCH in "$(get_arch)"
+        do
+            if [ "$YNH_BRANCH" == "stable" ]
+            then
+                rebuild_base_lxc $YNH_BRANCH $DIST $ARCH
+            else
+                from_stable_to_another_version $YNH_BRANCH $DIST $ARCH
+            fi
+        done
+    done
+done
