@@ -94,7 +94,7 @@ function rebuild_base_lxc()
 
     LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
     lxc stop $img_name
-    lxc image delete $img_name
+    lxc image delete $LXC_BASE
     lxc publish $img_name --alias $LXC_BASE --public
     lxc delete $img_name
     set +x
