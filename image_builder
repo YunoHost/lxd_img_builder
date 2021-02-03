@@ -148,8 +148,7 @@ function from_stable_to_another_version()
     $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
 
     lxc stop $NEW_LXC_BASE
-    lxc image delete $NEW_LXC_BASE
-    lxc publish $NEW_LXC_BASE --alias $NEW_LXC_BASE --public
+    rotate_image $NEW_LXC_BASE $NEW_LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
     lxc delete $NEW_LXC_BASE
 
     OLD_LXC_BASE="ynh-appci-$DIST-$ARCH-stable-base"
@@ -164,8 +163,7 @@ function from_stable_to_another_version()
     $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
     
     lxc stop $NEW_LXC_BASE
-    lxc image delete $NEW_LXC_BASE
-    lxc publish $NEW_LXC_BASE --alias $NEW_LXC_BASE --public
+    rotate_image $NEW_LXC_BASE $NEW_LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
     lxc delete $NEW_LXC_BASE
     set +x
 }
