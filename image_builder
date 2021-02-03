@@ -17,6 +17,34 @@ function get_arch()
     echo $architecture
 }
 
+function rotate_image()
+{
+    local instance_to_publish=$1
+    local alias_image=$2
+
+    # Save the finger print to delete the old image later
+    local finger_print_to_delete=$(lxc image info "$alias_image" | grep Fingerprint | awk '{print $2}')
+    local should_restart=0
+
+    # If the container is running, stop it
+    if [ "$(lxc info $instance_to_publish | grep Status | awk '{print $2}')" = "Running" ]
+    then
+        should_restart=1
+        lxc stop "$instance_to_publish"
+    fi
+
+    # Create image before install
+    lxc publish "$instance_to_publish" --alias "$alias_image" --public "${@:3}"
+    # Remove old image
+    lxc image delete "$finger_print_to_delete"
+
+    if [ $should_restart = 1 ]
+    then
+        lxc start "$instance_to_publish"
+        sleep 5
+    fi
+}
+
 function rebuild_base_lxc()
 {
     local YNH_BRANCH=${1:-stable}
@@ -69,11 +97,7 @@ function rebuild_base_lxc()
 
     # Publish ynh-dev image
     local LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
-    lxc stop $img_name
-    lxc image delete $LXC_BASE
-    lxc publish $img_name --alias $LXC_BASE --public
-    lxc start $img_name
-    sleep 5
+    rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
 
     local YUNO_PWD="admin"
     local DOMAIN="domain.tld"
@@ -88,14 +112,13 @@ function rebuild_base_lxc()
 
     $IN_LXC yunohost domain add $SUBDOMAIN
     TEST_USER_DISPLAY=${TEST_USER//"_"/""}
-    $IN_LXC yunohost user create $TEST_USER --firstname $TEST_USER_DISPLAY --mail $TEST_USER@$DOMAIN --lastname $TEST_USER_DISPLAY --password "$YUNO_PWD"
+    $IN_LXC yunohost user create $TEST_USER --firstname $TEST_USER_DISPLAY --lastname $TEST_USER_DISPLAY --domain $DOMAIN --password "$YUNO_PWD"
 
-    $IN_LXC yunohost --version
+    $IN_LXC "yunohost --version"
 
     LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
     lxc stop $img_name
-    lxc image delete $LXC_BASE
-    lxc publish $img_name --alias $LXC_BASE --public
+    rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
     lxc delete $img_name
     set +x
 }
