@@ -80,7 +80,12 @@ function rebuild_base_lxc()
     
     IN_LXC="lxc exec $img_name --"
     
-    local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
+    if [[ "$DIST" != "bullseye" ]]
+    then 
+       local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
+    else
+       local INSTALL_SCRIPT="https://install.yunohost.org/${DIST}_do_not_install_it_in_prod"
+    fi
     $IN_LXC apt install curl -y
     $IN_LXC /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
     
@@ -143,7 +148,7 @@ function from_stable_to_another_version()
     lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
     sleep 5
 
-    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ buster stable $source > /etc/apt/sources.list.d/yunohost.list"
+    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ $DIST stable $source > /etc/apt/sources.list.d/yunohost.list"
     $IN_LXC /bin/bash -c "apt-get update"
     $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
 
@@ -158,7 +163,7 @@ function from_stable_to_another_version()
     lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
     sleep 5
 
-    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ buster stable $source > /etc/apt/sources.list.d/yunohost.list"
+    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ $DIST stable $source > /etc/apt/sources.list.d/yunohost.list"
     $IN_LXC /bin/bash -c "apt-get update"
     $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
     
@@ -168,9 +173,9 @@ function from_stable_to_another_version()
     set +x
 }
 
-for YNH_BRANCH in "stable" "testing" "unstable"
+for DIST in "buster" # Add new debian version here
 do
-    for DIST in "buster" # Add new debian version here
+    for YNH_BRANCH in "stable" "testing" "unstable"
     do
         for ARCH in "$(get_arch)"
         do
@@ -180,6 +185,17 @@ do
             else
                 from_stable_to_another_version $YNH_BRANCH $DIST $ARCH
             fi
+        done
+    done
+done
+
+for DIST in "bullseye" # Add new debian version here
+do
+    for YNH_BRANCH in "unstable"
+    do
+        for ARCH in "$(get_arch)"
+        do
+            rebuild_base_lxc $YNH_BRANCH $DIST $ARCH
         done
     done
 done
