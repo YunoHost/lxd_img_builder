@@ -80,12 +80,8 @@ function rebuild_base_lxc()
     
     IN_LXC="lxc exec $img_name --"
     
-    if [[ "$DIST" != "bullseye" ]]
-    then 
-       local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
-    else
-       local INSTALL_SCRIPT="https://install.yunohost.org/${DIST}_do_not_install_it_in_prod"
-    fi
+    local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
+
     $IN_LXC apt install curl -y
     $IN_LXC /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
     
