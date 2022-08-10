@@ -169,20 +169,7 @@ function from_stable_to_another_version()
     set +x
 }
 
-for DIST in "buster" # Add new debian version here
-do
-    for ARCH in "$(get_arch)"
-    do
-        rebuild_base_lxc "stable" $DIST $ARCH
-
-        for YNH_BRANCH in "testing" "unstable"
-        do
-            from_stable_to_another_version $YNH_BRANCH $DIST $ARCH
-        done
-    done
-done
-
-for DIST in "bullseye" # Add new debian version here
+for DIST in "buster" "bullseye" # Add new debian version here
 do
     for ARCH in "$(get_arch)"
     do
