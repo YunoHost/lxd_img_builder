@@ -110,20 +110,19 @@ function rebuild_base_lxc()
     local LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
     rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
 
-    local YUNO_PWD="admin"
+    local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
     local SUBDOMAIN="sub.$DOMAIN"
     local TEST_USER="package_checker"
+    local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
 
     # Disable password strength check
-    $IN_LXC yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --force-password
+    $IN_LXC yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
 
-    $IN_LXC yunohost settings set security.password.admin.strength -v -1
-    $IN_LXC yunohost settings set security.password.user.strength -v -1
+    echo 'admin_strength: -1' >> /etc/yunohost/settings.yml
+    echo 'user_strength: -1' >> /etc/yunohost/settings.yml
 
     $IN_LXC yunohost domain add $SUBDOMAIN
-    TEST_USER_DISPLAY=${TEST_USER//"_"/""}
-    $IN_LXC yunohost user create $TEST_USER --firstname $TEST_USER_DISPLAY --lastname $TEST_USER_DISPLAY --domain $DOMAIN --password "$YUNO_PWD"
 
     $IN_LXC "yunohost --version"
 
