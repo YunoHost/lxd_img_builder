@@ -48,10 +48,10 @@ function rotate_image()
 function rebuild_base_lxc()
 {
     local YNH_BRANCH=${1:-stable}
-    local DIST=${2:-buster}
+    local DIST=${2:-bullseye}
     local ARCH=${3:-amd64}
     local img_name=$YNH_BRANCH-$DIST-$ARCH
-    
+
     set -x
     lxc info $img_name >/dev/null && lxc delete $img_name --force
 
@@ -128,16 +128,22 @@ function rebuild_base_lxc()
 function from_stable_to_another_version()
 {
     local YNH_BRANCH=${1:-testing}
-    local DIST=${2:-buster}
+    local DIST=${2:-bullseye}
     local ARCH=${3:-amd64}
     local OLD_LXC_BASE="ynh-dev-$DIST-$ARCH-stable-base"
     local NEW_LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
 
-	if [ "$YNH_BRANCH" == "testing" ]; then
-		source="testing"
-	else
-		source="testing unstable"
-	fi
+    local CUSTOMAPT=/etc/apt/sources.list.d/yunohost.list
+
+    if [[ "$YNH_BRANCH" == "testing" ]] ; then
+        CHANNELS="testing"
+    elif [[ "$YNH_BRANCH" == "unstable" ]] ; then
+        CHANNELS="testing unstable"
+    fi
+
+    local CUSTOMDEB="deb [signed-by=/usr/share/keyrings/yunohost-archive-keyring.gpg] http://forge.yunohost.org/debian/ $DIST stable $CHANNELS"
+
+    #curl --fail --silent https://forge.yunohost.org/yunohost_bullseye.asc | gpg --dearmor > /usr/share/keyrings/yunohost-archive-keyring.gpg
 
     set -x
     IN_LXC="lxc exec $NEW_LXC_BASE --"
@@ -145,7 +151,7 @@ function from_stable_to_another_version()
     lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
     sleep 5
 
-    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ $DIST stable $source > /etc/apt/sources.list.d/yunohost.list"
+    $IN_LXC /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
     $IN_LXC /bin/bash -c "apt-get update"
     $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
 
@@ -160,17 +166,17 @@ function from_stable_to_another_version()
     lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
     sleep 5
 
-    $IN_LXC /bin/bash -c "echo deb http://forge.yunohost.org/debian/ $DIST stable $source > /etc/apt/sources.list.d/yunohost.list"
+    $IN_LXC /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
     $IN_LXC /bin/bash -c "apt-get update"
     $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
-    
+
     lxc stop $NEW_LXC_BASE
     rotate_image $NEW_LXC_BASE $NEW_LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
     lxc delete $NEW_LXC_BASE
     set +x
 }
 
-for DIST in "buster" "bullseye" # Add new debian version here
+for DIST in "bullseye" # Add new debian version here
 do
     for ARCH in "$(get_arch)"
     do
