@@ -94,6 +94,15 @@ function rebuild_base_lxc()
     $IN_LXC systemctl -q disable apt-daily-upgrade.service
     $IN_LXC rm -f /etc/cron.daily/apt-compat
     $IN_LXC cp /bin/true /usr/lib/apt/apt.systemd.daily
+
+    # Disable services that are useless in the vast majority of cases to try to improve perfs
+    $IN_LXC systemctl -q disable rspamd
+    $IN_LXC systemctl -q disable dovecot
+    $IN_LXC systemctl -q disable postsrsd
+    $IN_LXC systemctl -q disable metronome
+    $IN_LXC systemctl -q disable yunohost-api
+    $IN_LXC sed -i 's/worker_processes.*;/worker_processes 4;/g' /etc/nginx/nginx.conf
+
     $IN_LXC /bin/bash -c "reboot 0"
     sleep 5
 
