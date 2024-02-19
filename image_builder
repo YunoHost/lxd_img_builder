@@ -34,7 +34,8 @@ function rotate_image()
     fi
 
     # Create image before install
-    lxc publish "$instance_to_publish" --alias "$alias_image" --public "${@:3}"
+    lxc publish "$instance_to_publish" --alias "$alias_image" --reuse --public "${@:3}"
+    
     # Remove old image
     lxc image delete "$finger_print_to_delete"
 
@@ -49,7 +50,7 @@ function rebuild_base_lxc()
 {
     local YNH_BRANCH=${1:-stable}
     local DIST=${2:-bullseye}
-    local ARCH=${3:-amd64}
+    local ARCH=${3:-$(dpkg --print-architecture)}
     local img_name=$YNH_BRANCH-$DIST-$ARCH
 
     set -x
@@ -77,9 +78,9 @@ function rebuild_base_lxc()
         lxc launch $img_name $img_name -c security.privileged=true -c security.nesting=true
     fi
     sleep 5
-    
+
     IN_LXC="lxc exec $img_name --"
-    
+
     local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
 
     $IN_LXC apt install curl -y
@@ -87,20 +88,30 @@ function rebuild_base_lxc()
     $IN_LXC /bin/bash -c "chmod +x /usr/sbin/policy-rc.d"
     $IN_LXC /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
     $IN_LXC /bin/bash -c "rm /usr/sbin/policy-rc.d"
- 
-    $IN_LXC systemctl -q disable apt-daily.timer
-    $IN_LXC systemctl -q disable apt-daily-upgrade.timer
-    $IN_LXC systemctl -q disable apt-daily.service
-    $IN_LXC systemctl -q disable apt-daily-upgrade.service
+
+    $IN_LXC systemctl -q disable apt-daily.timer --now
+    $IN_LXC systemctl -q disable apt-daily-upgrade.timer --now
+    $IN_LXC systemctl -q disable apt-daily.service --now
+    $IN_LXC systemctl -q disable apt-daily-upgrade.service --now
     $IN_LXC rm -f /etc/cron.daily/apt-compat
     $IN_LXC cp /bin/true /usr/lib/apt/apt.systemd.daily
 
     # Disable services that are useless in the vast majority of cases to try to improve perfs
-    $IN_LXC systemctl -q disable rspamd
-    $IN_LXC systemctl -q disable dovecot
-    $IN_LXC systemctl -q disable postsrsd
-    $IN_LXC systemctl -q disable metronome
-    $IN_LXC systemctl -q disable yunohost-api
+    $IN_LXC systemctl -q disable rspamd --now
+    $IN_LXC systemctl -q disable dovecot --now
+    $IN_LXC systemctl -q disable postsrsd --now
+    $IN_LXC systemctl -q disable metronome --now
+    $IN_LXC systemctl -q disable yunohost-api --now
+    $IN_LXC systemctl -q disable fake-hwclock.service --now
+    $IN_LXC systemctl -q disable yunoprompt --now
+    $IN_LXC systemctl -q disable haveged.service --now
+    $IN_LXC systemctl -q disable metronome.service --now
+    $IN_LXC systemctl -q disable unattended-upgrades.service --now
+    $IN_LXC systemctl -q disable e2scrub_all.timer
+    $IN_LXC systemctl -q disable logrotate.timer
+    $IN_LXC systemctl -q disable phpsessionclean.timer
+    $IN_LXC systemctl -q disable systemd-tmpfiles-clean.timer
+
     $IN_LXC sed -i 's/worker_processes.*;/worker_processes 4;/g' /etc/nginx/nginx.conf
 
     $IN_LXC /bin/bash -c "reboot 0"
@@ -109,6 +120,51 @@ function rebuild_base_lxc()
     # Publish ynh-dev image
     local LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
     rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
+   
+    local YUNO_PWD="SomeSuperStrongPassword"
+    local DOMAIN="domain.tld"
+    local SUBDOMAIN="sub.$DOMAIN"
+    local TEST_USER="package_checker"
+    local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
+
+    # Disable password strength check
+    $IN_LXC yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
+
+    $IN_LXC /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_LXC /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+
+    $IN_LXC yunohost domain add $SUBDOMAIN
+
+    $IN_LXC yunohost --version
+
+    LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
+    lxc stop $img_name
+    rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
+    lxc delete $img_name
+    set +x
+}
+
+function update_appci_image()
+{
+    local YNH_BRANCH=${1:-stable}
+    local DIST=${2:-bullseye}
+    local ARCH=${3:-$(dpkg --print-architecture)}
+    local img_name=$YNH_BRANCH-$DIST-$ARCH
+
+    set -x
+    lxc launch ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base $img_name -c security.privileged=true -c security.nesting=true
+    IN_LXC="lxc exec $img_name --"
+    
+    sleep 3
+
+    echo "nameserver 8.8.8.8" | $IN_LXC tee /etc/resolv.conf
+    
+    sleep 3
+
+    $IN_LXC ping -c3 deb.debian.org || exit 1
+ 
+    $IN_LXC apt update
+    $IN_LXC apt dist-upgrade -y
 
     local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
@@ -119,26 +175,29 @@ function rebuild_base_lxc()
     # Disable password strength check
     $IN_LXC yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
 
-    echo 'admin_strength: -1' >> /etc/yunohost/settings.yml
-    echo 'user_strength: -1' >> /etc/yunohost/settings.yml
+    $IN_LXC /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_LXC /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 
     $IN_LXC yunohost domain add $SUBDOMAIN
 
-    $IN_LXC "yunohost --version"
+    $IN_LXC yunohost --version
+
 
     LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
     lxc stop $img_name
     rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
     lxc delete $img_name
     set +x
+
 }
 
 function from_stable_to_another_version()
 {
     local YNH_BRANCH=${1:-testing}
     local DIST=${2:-bullseye}
-    local ARCH=${3:-amd64}
-    local OLD_LXC_BASE="ynh-dev-$DIST-$ARCH-stable-base"
+    local ARCH=${3:-$(dpkg --print-architecture)}
+    local BASE_IMG=${4:-stable}
+    local OLD_LXC_BASE="ynh-dev-$DIST-$ARCH-$BASE_IMG-base"
     local NEW_LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
 
     local CUSTOMAPT=/etc/apt/sources.list.d/yunohost.list
@@ -178,21 +237,21 @@ function from_stable_to_another_version()
     $IN_LXC /bin/bash -c "apt-get update"
     $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
 
+    $IN_LXC /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_LXC /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+
     lxc stop $NEW_LXC_BASE
     rotate_image $NEW_LXC_BASE $NEW_LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
     lxc delete $NEW_LXC_BASE
     set +x
 }
-
+    
 for DIST in "bullseye" # Add new debian version here
 do
-    for ARCH in "$(get_arch)"
-    do
-        rebuild_base_lxc "stable" $DIST $ARCH
+    rebuild_base_lxc "stable" $DIST
 
-        for YNH_BRANCH in "testing" "unstable"
-        do
-            from_stable_to_another_version $YNH_BRANCH $DIST $ARCH
-        done
+    for YNH_BRANCH in "testing" "unstable"
+    do
+        from_stable_to_another_version $YNH_BRANCH $DIST
     done
 done
