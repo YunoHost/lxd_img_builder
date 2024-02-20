@@ -83,7 +83,7 @@ function rebuild_base_lxc()
 
     local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
 
-    $IN_LXC apt install curl -y
+    $IN_LXC apt install eatmydata curl -y
     $IN_LXC /bin/bash -c "echo exit 101 > /usr/sbin/policy-rc.d"
     $IN_LXC /bin/bash -c "chmod +x /usr/sbin/policy-rc.d"
     $IN_LXC /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
