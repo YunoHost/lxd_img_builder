@@ -23,30 +23,30 @@ function rotate_image()
     local alias_image=$2
 
     # Save the finger print to delete the old image later
-    local finger_print_to_delete=$(lxc image info "$alias_image" | grep Fingerprint | awk '{print $2}')
+    local finger_print_to_delete=$(incus image info "$alias_image" | grep Fingerprint | awk '{print $2}')
     local should_restart=0
 
     # If the container is running, stop it
-    if [ "$(lxc info $instance_to_publish | grep Status | awk '{print tolower($2)}')" = "running" ]
+    if [ "$(incus info $instance_to_publish | grep Status | awk '{print tolower($2)}')" = "running" ]
     then
         should_restart=1
-        lxc stop "$instance_to_publish"
+        incus stop "$instance_to_publish"
     fi
 
     # Create image before install
-    lxc publish "$instance_to_publish" --alias "$alias_image" --reuse --public "${@:3}"
+    incus publish "$instance_to_publish" --alias "$alias_image" --reuse --public "${@:3}"
     
     # Remove old image
-    lxc image delete "$finger_print_to_delete"
+    incus image delete "$finger_print_to_delete"
 
     if [ $should_restart = 1 ]
     then
-        lxc start "$instance_to_publish"
+        incus start "$instance_to_publish"
         sleep 5
     fi
 }
 
-function rebuild_base_lxc()
+function rebuild_base_incus()
 {
     local YNH_BRANCH=${1:-stable}
     local DIST=${2:-bullseye}
@@ -54,72 +54,72 @@ function rebuild_base_lxc()
     local img_name=$YNH_BRANCH-$DIST-$ARCH
 
     set -x
-    lxc info $img_name >/dev/null && lxc delete $img_name --force
+    incus info $img_name >/dev/null && incus delete $img_name --force
 
     if [ $(get_arch) = $ARCH ];
     then
-        lxc launch images:debian/$DIST/$ARCH $img_name -c security.privileged=true -c security.nesting=true
+        incus launch images:debian/$DIST/$ARCH $img_name -c security.privileged=true -c security.nesting=true
     else
-        lxc image info $img_name >/dev/null && lxc image delete $img_name
+        incus image info $img_name >/dev/null && incus image delete $img_name
 
         tmp_dir=$(mktemp -d)
         pushd $tmp_dir
 
-        lxc image export images:debian/$DIST/$ARCH
+        incus image export images:debian/$DIST/$ARCH
 
         tar xJf lxd.tar.xz
         local current_arch=$(get_arch)
         sed -i "0,/architecture: $ARCH/s//architecture: $current_arch/" metadata.yaml
         tar cJf lxd.tar.xz metadata.yaml templates
-        lxc image import lxd.tar.xz rootfs.squashfs --alias $img_name
+        incus image import lxd.tar.xz rootfs.squashfs --alias $img_name
         popd
         rm -rf "$tmp_dir"
 
-        lxc launch $img_name $img_name -c security.privileged=true -c security.nesting=true
+        incus launch $img_name $img_name -c security.privileged=true -c security.nesting=true
     fi
     sleep 5
 
-    IN_LXC="lxc exec $img_name --"
+    IN_INCUS="incus exec $img_name --"
 
     local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
 
-    $IN_LXC apt install curl -y
-    $IN_LXC /bin/bash -c "echo exit 101 > /usr/sbin/policy-rc.d"
-    $IN_LXC /bin/bash -c "chmod +x /usr/sbin/policy-rc.d"
-    $IN_LXC /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
-    $IN_LXC /bin/bash -c "rm /usr/sbin/policy-rc.d"
+    $IN_INCUS apt install curl -y
+    $IN_INCUS /bin/bash -c "echo exit 101 > /usr/sbin/policy-rc.d"
+    $IN_INCUS /bin/bash -c "chmod +x /usr/sbin/policy-rc.d"
+    $IN_INCUS /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
+    $IN_INCUS /bin/bash -c "rm /usr/sbin/policy-rc.d"
 
-    $IN_LXC systemctl -q disable apt-daily.timer --now
-    $IN_LXC systemctl -q disable apt-daily-upgrade.timer --now
-    $IN_LXC systemctl -q disable apt-daily.service --now
-    $IN_LXC systemctl -q disable apt-daily-upgrade.service --now
-    $IN_LXC rm -f /etc/cron.daily/apt-compat
-    $IN_LXC cp /bin/true /usr/lib/apt/apt.systemd.daily
+    $IN_INCUS systemctl -q disable apt-daily.timer --now
+    $IN_INCUS systemctl -q disable apt-daily-upgrade.timer --now
+    $IN_INCUS systemctl -q disable apt-daily.service --now
+    $IN_INCUS systemctl -q disable apt-daily-upgrade.service --now
+    $IN_INCUS rm -f /etc/cron.daily/apt-compat
+    $IN_INCUS cp /bin/true /usr/lib/apt/apt.systemd.daily
 
     # Disable services that are useless in the vast majority of cases to try to improve perfs
-    $IN_LXC systemctl -q disable rspamd --now
-    $IN_LXC systemctl -q disable dovecot --now
-    $IN_LXC systemctl -q disable postsrsd --now
-    $IN_LXC systemctl -q disable metronome --now
-    $IN_LXC systemctl -q disable yunohost-api --now
-    $IN_LXC systemctl -q disable fake-hwclock.service --now
-    $IN_LXC systemctl -q disable yunoprompt --now
-    $IN_LXC systemctl -q disable haveged.service --now
-    $IN_LXC systemctl -q disable metronome.service --now
-    $IN_LXC systemctl -q disable unattended-upgrades.service --now
-    $IN_LXC systemctl -q disable e2scrub_all.timer
-    $IN_LXC systemctl -q disable logrotate.timer
-    $IN_LXC systemctl -q disable phpsessionclean.timer
-    $IN_LXC systemctl -q disable systemd-tmpfiles-clean.timer
+    $IN_INCUS systemctl -q disable rspamd --now
+    $IN_INCUS systemctl -q disable dovecot --now
+    $IN_INCUS systemctl -q disable postsrsd --now
+    $IN_INCUS systemctl -q disable metronome --now
+    $IN_INCUS systemctl -q disable yunohost-api --now
+    $IN_INCUS systemctl -q disable fake-hwclock.service --now
+    $IN_INCUS systemctl -q disable yunoprompt --now
+    $IN_INCUS systemctl -q disable haveged.service --now
+    $IN_INCUS systemctl -q disable metronome.service --now
+    $IN_INCUS systemctl -q disable unattended-upgrades.service --now
+    $IN_INCUS systemctl -q disable e2scrub_all.timer
+    $IN_INCUS systemctl -q disable logrotate.timer
+    $IN_INCUS systemctl -q disable phpsessionclean.timer
+    $IN_INCUS systemctl -q disable systemd-tmpfiles-clean.timer
 
-    $IN_LXC sed -i 's/worker_processes.*;/worker_processes 4;/g' /etc/nginx/nginx.conf
+    $IN_INCUS sed -i 's/worker_processes.*;/worker_processes 4;/g' /etc/nginx/nginx.conf
 
-    $IN_LXC /bin/bash -c "reboot 0"
+    $IN_INCUS /bin/bash -c "reboot 0"
     sleep 5
 
     # Publish ynh-dev image
-    local LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
-    rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
+    local INCUS_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
+    rotate_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
    
     local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
@@ -128,19 +128,19 @@ function rebuild_base_lxc()
     local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
 
     # Disable password strength check
-    $IN_LXC yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
+    $IN_INCUS yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
 
-    $IN_LXC /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-    $IN_LXC /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 
-    $IN_LXC yunohost domain add $SUBDOMAIN
+    $IN_INCUS yunohost domain add $SUBDOMAIN
 
-    $IN_LXC yunohost --version
+    $IN_INCUS yunohost --version
 
-    LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-    lxc stop $img_name
-    rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
-    lxc delete $img_name
+    INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
+    incus stop $img_name
+    rotate_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
+    incus delete $img_name
     set +x
 }
 
@@ -152,19 +152,19 @@ function update_appci_image()
     local img_name=$YNH_BRANCH-$DIST-$ARCH
 
     set -x
-    lxc launch ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base $img_name -c security.privileged=true -c security.nesting=true
-    IN_LXC="lxc exec $img_name --"
+    incus launch ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base $img_name -c security.privileged=true -c security.nesting=true
+    IN_INCUS="incus exec $img_name --"
     
     sleep 3
 
-    echo "nameserver 8.8.8.8" | $IN_LXC tee /etc/resolv.conf
+    echo "nameserver 8.8.8.8" | $IN_INCUS tee /etc/resolv.conf
     
     sleep 3
 
-    $IN_LXC ping -c3 deb.debian.org || exit 1
+    $IN_INCUS ping -c3 deb.debian.org || exit 1
  
-    $IN_LXC apt update
-    $IN_LXC apt dist-upgrade -y
+    $IN_INCUS apt update
+    $IN_INCUS apt dist-upgrade -y
 
     local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
@@ -173,20 +173,20 @@ function update_appci_image()
     local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
 
     # Disable password strength check
-    $IN_LXC yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
+    $IN_INCUS yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
 
-    $IN_LXC /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-    $IN_LXC /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 
-    $IN_LXC yunohost domain add $SUBDOMAIN
+    $IN_INCUS yunohost domain add $SUBDOMAIN
 
-    $IN_LXC yunohost --version
+    $IN_INCUS yunohost --version
 
 
-    LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-    lxc stop $img_name
-    rotate_image $img_name $LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
-    lxc delete $img_name
+    INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
+    incus stop $img_name
+    rotate_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
+    incus delete $img_name
     set +x
 
 }
@@ -197,8 +197,8 @@ function from_stable_to_another_version()
     local DIST=${2:-bullseye}
     local ARCH=${3:-$(dpkg --print-architecture)}
     local BASE_IMG=${4:-stable}
-    local OLD_LXC_BASE="ynh-dev-$DIST-$ARCH-$BASE_IMG-base"
-    local NEW_LXC_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
+    local OLD_INCUS_BASE="ynh-dev-$DIST-$ARCH-$BASE_IMG-base"
+    local NEW_INCUS_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
 
     local CUSTOMAPT=/etc/apt/sources.list.d/yunohost.list
 
@@ -213,45 +213,55 @@ function from_stable_to_another_version()
     #curl --fail --silent https://forge.yunohost.org/yunohost_bullseye.asc | gpg --dearmor > /usr/share/keyrings/yunohost-archive-keyring.gpg
 
     set -x
-    IN_LXC="lxc exec $NEW_LXC_BASE --"
+    IN_INCUS="incus exec $NEW_INCUS_BASE --"
 
-    lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
+    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
     sleep 5
 
-    $IN_LXC /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-    $IN_LXC /bin/bash -c "apt-get update"
-    $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
+    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
+    $IN_INCUS /bin/bash -c "apt-get update"
+    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
 
-    lxc stop $NEW_LXC_BASE
-    rotate_image $NEW_LXC_BASE $NEW_LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
-    lxc delete $NEW_LXC_BASE
+    incus stop $NEW_INCUS_BASE
+    rotate_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
+    incus delete $NEW_INCUS_BASE
 
-    OLD_LXC_BASE="ynh-appci-$DIST-$ARCH-stable-base"
-    NEW_LXC_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-    IN_LXC="lxc exec $NEW_LXC_BASE --"
+    OLD_INCUS_BASE="ynh-appci-$DIST-$ARCH-stable-base"
+    NEW_INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
+    IN_INCUS="incus exec $NEW_INCUS_BASE --"
 
-    lxc launch $OLD_LXC_BASE $NEW_LXC_BASE -c security.privileged=true -c security.nesting=true
+    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
     sleep 5
 
-    $IN_LXC /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-    $IN_LXC /bin/bash -c "apt-get update"
-    $IN_LXC /bin/bash -c "apt-get dist-upgrade -y"
+    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
+    $IN_INCUS /bin/bash -c "apt-get update"
+    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
 
-    $IN_LXC /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-    $IN_LXC /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 
-    lxc stop $NEW_LXC_BASE
-    rotate_image $NEW_LXC_BASE $NEW_LXC_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
-    lxc delete $NEW_LXC_BASE
+    incus stop $NEW_INCUS_BASE
+    rotate_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
+    incus delete $NEW_INCUS_BASE
     set +x
 }
     
 for DIST in "bullseye" # Add new debian version here
 do
-    rebuild_base_lxc "stable" $DIST
+    rebuild_base_incus "stable" $DIST
 
     for YNH_BRANCH in "testing" "unstable"
     do
         from_stable_to_another_version $YNH_BRANCH $DIST
+    done
+done
+
+for DIST in "bookworm" # Add new debian version here
+do
+    rebuild_base_incus "unstable" $DIST
+
+    for YNH_BRANCH in "testing"
+    do
+        from_stable_to_another_version $YNH_BRANCH $DIST "$(dpkg --print-architecture)" "unstable"
     done
 done
