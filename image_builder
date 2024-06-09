@@ -1,23 +1,46 @@
 #!/bin/bash
 
-function get_arch()
+DEFAULT_ARCH=$(dpkg --print-architecture)
+
+function help()
 {
-    local architecture
-    if uname -m | grep -q "arm64" || uname -m | grep -q "aarch64"; then
-        architecture="arm64"
-    elif uname -m | grep -q "64"; then
-        architecture="amd64"
-    elif uname -m | grep -q "86"; then
-        architecture="i386"
-    elif uname -m | grep -q "arm"; then
-        architecture="armhf"
-    else
-        architecture="unknown"
-    fi
-    echo $architecture
+    cat << EOF
+
+Usage: ./script.sh [command] [additional args...]
+
+  The 'base' image is after yunohost install script, but before postinstall. It is fetched by ynh-dev for local development.
+  The 'appci' image is after postinstall, with a first user named 'package_checker' as expected by the CI (package_check)
+
+Commands:
+
+  - rebuild [BRANCH] [DIST]       Rebuild the base and appci image for BRANCH on DIST
+  - update_appci [BRANCH] [DIST]  Update the appci image for BRANCH on DIST
+
+Arguments:
+
+  - BRANCH                        stable, testing or unstable
+  - DIST                          bullseye, or bookworm
+
+EOF
 }
 
-function rotate_image()
+function main {
+    KNOWN_COMMANDS=$(declare -F | awk '{print $3}')
+    if [ -z "$1" ] || [ "$1" == "--help" ]
+    then
+        help
+    elif grep -q -w "$1" <<< "$KNOWN_COMMANDS"
+    then
+        cmd="$1"
+        shift 1
+        $cmd $@
+    else
+        echo "Unknown command '$1', check --help to list available commands"
+        exit 1
+    fi
+}
+
+function _publish_image()
 {
     local instance_to_publish=$1
     local alias_image=$2
@@ -35,7 +58,7 @@ function rotate_image()
 
     # Create image before install
     incus publish "$instance_to_publish" --alias "$alias_image" --reuse --public "${@:3}"
-    
+
     # Remove old image
     incus image delete "$finger_print_to_delete"
 
@@ -46,17 +69,17 @@ function rotate_image()
     fi
 }
 
-function rebuild_base_incus()
+function rebuild()
 {
     local YNH_BRANCH=${1:-stable}
     local DIST=${2:-bullseye}
-    local ARCH=${3:-$(dpkg --print-architecture)}
+    local ARCH=${3:-$DEFAULT_ARCH}
     local img_name=$YNH_BRANCH-$DIST-$ARCH
 
     set -x
     incus info $img_name >/dev/null && incus delete $img_name --force
 
-    if [ $(get_arch) = $ARCH ];
+    if [ $DEFAULT_ARCH = $ARCH ];
     then
         incus launch images:debian/$DIST/$ARCH $img_name -c security.privileged=true -c security.nesting=true
     else
@@ -68,8 +91,7 @@ function rebuild_base_incus()
         incus image export images:debian/$DIST/$ARCH
 
         tar xJf lxd.tar.xz
-        local current_arch=$(get_arch)
-        sed -i "0,/architecture: $ARCH/s//architecture: $current_arch/" metadata.yaml
+        sed -i "0,/architecture: $ARCH/s//architecture: $DEFAULT_ARCH/" metadata.yaml
         tar cJf lxd.tar.xz metadata.yaml templates
         incus image import lxd.tar.xz rootfs.squashfs --alias $img_name
         popd
@@ -119,13 +141,16 @@ function rebuild_base_incus()
 
     # Publish ynh-dev image
     local INCUS_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
-    rotate_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
-   
+    _publish_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
+
     local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
     local SUBDOMAIN="sub.$DOMAIN"
     local TEST_USER="package_checker"
     local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
+
+    # 240501: fix because the container was not getting an IP
+    $IN_INCUS dhclient eth0
 
     # Disable password strength check
     $IN_INCUS yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
@@ -139,12 +164,12 @@ function rebuild_base_incus()
 
     INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
     incus stop $img_name
-    rotate_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
+    _publish_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
     incus delete $img_name
     set +x
 }
 
-function update_appci_image()
+function update_appci()
 {
     local YNH_BRANCH=${1:-stable}
     local DIST=${2:-bullseye}
@@ -154,15 +179,15 @@ function update_appci_image()
     set -x
     incus launch ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base $img_name -c security.privileged=true -c security.nesting=true
     IN_INCUS="incus exec $img_name --"
-    
+
     sleep 3
 
     echo "nameserver 8.8.8.8" | $IN_INCUS tee /etc/resolv.conf
-    
+
     sleep 3
 
     $IN_INCUS ping -c3 deb.debian.org || exit 1
- 
+
     $IN_INCUS apt update
     $IN_INCUS apt dist-upgrade -y
 
@@ -185,83 +210,65 @@ function update_appci_image()
 
     INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
     incus stop $img_name
-    rotate_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
+    _publish_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
     incus delete $img_name
     set +x
-
 }
 
-function from_stable_to_another_version()
-{
-    local YNH_BRANCH=${1:-testing}
-    local DIST=${2:-bullseye}
-    local ARCH=${3:-$(dpkg --print-architecture)}
-    local BASE_IMG=${4:-stable}
-    local OLD_INCUS_BASE="ynh-dev-$DIST-$ARCH-$BASE_IMG-base"
-    local NEW_INCUS_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
+#function from_stable_to_another_version()
+#{
+#    local YNH_BRANCH=${1:-testing}
+#    local DIST=${2:-bullseye}
+#    local ARCH=${3:-$DEFAULT_ARCH}
+#    local BASE_IMG=${4:-stable}
+#    local OLD_INCUS_BASE="ynh-dev-$DIST-$ARCH-$BASE_IMG-base"
+#    local NEW_INCUS_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
+#
+#    local CUSTOMAPT=/etc/apt/sources.list.d/yunohost.list
+#
+#    if [[ "$YNH_BRANCH" == "testing" ]] ; then
+#        CHANNELS="testing"
+#    elif [[ "$YNH_BRANCH" == "unstable" ]] ; then
+#        CHANNELS="testing unstable"
+#    fi
+#
+#    local CUSTOMDEB="deb [signed-by=/usr/share/keyrings/yunohost-archive-keyring.gpg] http://forge.yunohost.org/debian/ $DIST stable $CHANNELS"
+#
+#    #curl --fail --silent https://forge.yunohost.org/yunohost_bullseye.asc | gpg --dearmor > /usr/share/keyrings/yunohost-archive-keyring.gpg
+#
+#    set -x
+#    IN_INCUS="incus exec $NEW_INCUS_BASE --"
+#
+#    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
+#    sleep 5
+#
+#    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
+#    $IN_INCUS /bin/bash -c "apt-get update"
+#    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
+#
+#    incus stop $NEW_INCUS_BASE
+#    _publish_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
+#    incus delete $NEW_INCUS_BASE
+#
+#    OLD_INCUS_BASE="ynh-appci-$DIST-$ARCH-stable-base"
+#    NEW_INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
+#    IN_INCUS="incus exec $NEW_INCUS_BASE --"
+#
+#    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
+#    sleep 5
+#
+#    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
+#    $IN_INCUS /bin/bash -c "apt-get update"
+#    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
+#
+#    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+#    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+#
+#    incus stop $NEW_INCUS_BASE
+#    _publish_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
+#    incus delete $NEW_INCUS_BASE
+#    set +x
+#}
 
-    local CUSTOMAPT=/etc/apt/sources.list.d/yunohost.list
+main $@
 
-    if [[ "$YNH_BRANCH" == "testing" ]] ; then
-        CHANNELS="testing"
-    elif [[ "$YNH_BRANCH" == "unstable" ]] ; then
-        CHANNELS="testing unstable"
-    fi
-
-    local CUSTOMDEB="deb [signed-by=/usr/share/keyrings/yunohost-archive-keyring.gpg] http://forge.yunohost.org/debian/ $DIST stable $CHANNELS"
-
-    #curl --fail --silent https://forge.yunohost.org/yunohost_bullseye.asc | gpg --dearmor > /usr/share/keyrings/yunohost-archive-keyring.gpg
-
-    set -x
-    IN_INCUS="incus exec $NEW_INCUS_BASE --"
-
-    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
-    sleep 5
-
-    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-    $IN_INCUS /bin/bash -c "apt-get update"
-    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
-
-    incus stop $NEW_INCUS_BASE
-    rotate_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
-    incus delete $NEW_INCUS_BASE
-
-    OLD_INCUS_BASE="ynh-appci-$DIST-$ARCH-stable-base"
-    NEW_INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-    IN_INCUS="incus exec $NEW_INCUS_BASE --"
-
-    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
-    sleep 5
-
-    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-    $IN_INCUS /bin/bash -c "apt-get update"
-    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
-
-    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
-
-    incus stop $NEW_INCUS_BASE
-    rotate_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
-    incus delete $NEW_INCUS_BASE
-    set +x
-}
-    
-for DIST in "bullseye" # Add new debian version here
-do
-    rebuild_base_incus "stable" $DIST
-
-    for YNH_BRANCH in "testing" "unstable"
-    do
-        from_stable_to_another_version $YNH_BRANCH $DIST
-    done
-done
-
-for DIST in "bookworm" # Add new debian version here
-do
-    rebuild_base_incus "unstable" $DIST
-
-    for YNH_BRANCH in "testing"
-    do
-        from_stable_to_another_version $YNH_BRANCH $DIST "$(dpkg --print-architecture)" "unstable"
-    done
-done
