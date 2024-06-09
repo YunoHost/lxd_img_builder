@@ -6,7 +6,7 @@ function help()
 {
     cat << EOF
 
-Usage: ./script.sh [command] [additional args...]
+Usage: ./image_builder [command] [additional args...]
 
   The 'base' image is after yunohost install script, but before postinstall. It is fetched by ynh-dev for local development.
   The 'appci' image is after postinstall, with a first user named 'package_checker' as expected by the CI (package_check)
@@ -24,7 +24,8 @@ Arguments:
 EOF
 }
 
-function main {
+function main()
+{
     KNOWN_COMMANDS=$(declare -F | awk '{print $3}')
     if [ -z "$1" ] || [ "$1" == "--help" ]
     then
