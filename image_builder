@@ -102,42 +102,42 @@ function rebuild()
     fi
     sleep 5
 
-    IN_INCUS="incus exec $img_name --"
+    IN_CONTAINER="incus exec $img_name --"
 
     local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
 
-    $IN_INCUS apt install curl -y
-    $IN_INCUS /bin/bash -c "echo exit 101 > /usr/sbin/policy-rc.d"
-    $IN_INCUS /bin/bash -c "chmod +x /usr/sbin/policy-rc.d"
-    $IN_INCUS /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
-    $IN_INCUS /bin/bash -c "rm /usr/sbin/policy-rc.d"
+    $IN_CONTAINER apt install curl -y
+    $IN_CONTAINER /bin/bash -c "echo exit 101 > /usr/sbin/policy-rc.d"
+    $IN_CONTAINER /bin/bash -c "chmod +x /usr/sbin/policy-rc.d"
+    $IN_CONTAINER /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
+    $IN_CONTAINER /bin/bash -c "rm /usr/sbin/policy-rc.d"
 
-    $IN_INCUS systemctl -q disable apt-daily.timer --now
-    $IN_INCUS systemctl -q disable apt-daily-upgrade.timer --now
-    $IN_INCUS systemctl -q disable apt-daily.service --now
-    $IN_INCUS systemctl -q disable apt-daily-upgrade.service --now
-    $IN_INCUS rm -f /etc/cron.daily/apt-compat
-    $IN_INCUS cp /bin/true /usr/lib/apt/apt.systemd.daily
+    $IN_CONTAINER systemctl -q disable apt-daily.timer --now
+    $IN_CONTAINER systemctl -q disable apt-daily-upgrade.timer --now
+    $IN_CONTAINER systemctl -q disable apt-daily.service --now
+    $IN_CONTAINER systemctl -q disable apt-daily-upgrade.service --now
+    $IN_CONTAINER rm -f /etc/cron.daily/apt-compat
+    $IN_CONTAINER cp /bin/true /usr/lib/apt/apt.systemd.daily
 
     # Disable services that are useless in the vast majority of cases to try to improve perfs
-    $IN_INCUS systemctl -q disable rspamd --now
-    $IN_INCUS systemctl -q disable dovecot --now
-    $IN_INCUS systemctl -q disable postsrsd --now
-    $IN_INCUS systemctl -q disable metronome --now
-    $IN_INCUS systemctl -q disable yunohost-api --now
-    $IN_INCUS systemctl -q disable fake-hwclock.service --now
-    $IN_INCUS systemctl -q disable yunoprompt --now
-    $IN_INCUS systemctl -q disable haveged.service --now
-    $IN_INCUS systemctl -q disable metronome.service --now
-    $IN_INCUS systemctl -q disable unattended-upgrades.service --now
-    $IN_INCUS systemctl -q disable e2scrub_all.timer
-    $IN_INCUS systemctl -q disable logrotate.timer
-    $IN_INCUS systemctl -q disable phpsessionclean.timer
-    $IN_INCUS systemctl -q disable systemd-tmpfiles-clean.timer
+    $IN_CONTAINER systemctl -q disable rspamd --now
+    $IN_CONTAINER systemctl -q disable dovecot --now
+    $IN_CONTAINER systemctl -q disable postsrsd --now
+    $IN_CONTAINER systemctl -q disable metronome --now
+    $IN_CONTAINER systemctl -q disable yunohost-api --now
+    $IN_CONTAINER systemctl -q disable fake-hwclock.service --now
+    $IN_CONTAINER systemctl -q disable yunoprompt --now
+    $IN_CONTAINER systemctl -q disable haveged.service --now
+    $IN_CONTAINER systemctl -q disable metronome.service --now
+    $IN_CONTAINER systemctl -q disable unattended-upgrades.service --now
+    $IN_CONTAINER systemctl -q disable e2scrub_all.timer
+    $IN_CONTAINER systemctl -q disable logrotate.timer
+    $IN_CONTAINER systemctl -q disable phpsessionclean.timer
+    $IN_CONTAINER systemctl -q disable systemd-tmpfiles-clean.timer
 
-    $IN_INCUS sed -i 's/worker_processes.*;/worker_processes 4;/g' /etc/nginx/nginx.conf
+    $IN_CONTAINER sed -i 's/worker_processes.*;/worker_processes 4;/g' /etc/nginx/nginx.conf
 
-    $IN_INCUS /bin/bash -c "reboot 0"
+    $IN_CONTAINER /bin/bash -c "reboot 0"
     sleep 5
 
     # Publish ynh-dev image
@@ -151,17 +151,17 @@ function rebuild()
     local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
 
     # 240501: fix because the container was not getting an IP
-    $IN_INCUS dhclient eth0
+    $IN_CONTAINER dhclient eth0
 
     # Disable password strength check
-    $IN_INCUS yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
+    $IN_CONTAINER yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
 
-    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_CONTAINER /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_CONTAINER /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 
-    $IN_INCUS yunohost domain add $SUBDOMAIN
+    $IN_CONTAINER yunohost domain add $SUBDOMAIN
 
-    $IN_INCUS yunohost --version
+    $IN_CONTAINER yunohost --version
 
     INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
     incus stop $img_name
@@ -179,18 +179,18 @@ function update_appci()
 
     set -x
     incus launch ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base $img_name -c security.privileged=true -c security.nesting=true
-    IN_INCUS="incus exec $img_name --"
+    IN_CONTAINER="incus exec $img_name --"
 
     sleep 3
 
-    echo "nameserver 8.8.8.8" | $IN_INCUS tee /etc/resolv.conf
+    echo "nameserver 8.8.8.8" | $IN_CONTAINER tee /etc/resolv.conf
 
     sleep 3
 
-    $IN_INCUS ping -c3 deb.debian.org || exit 1
+    $IN_CONTAINER ping -c3 deb.debian.org || exit 1
 
-    $IN_INCUS apt update
-    $IN_INCUS apt dist-upgrade -y
+    $IN_CONTAINER apt update
+    $IN_CONTAINER apt dist-upgrade -y
 
     local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
@@ -199,14 +199,14 @@ function update_appci()
     local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
 
     # Disable password strength check
-    $IN_INCUS yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
+    $IN_CONTAINER yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
 
-    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_CONTAINER /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+    $IN_CONTAINER /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 
-    $IN_INCUS yunohost domain add $SUBDOMAIN
+    $IN_CONTAINER yunohost domain add $SUBDOMAIN
 
-    $IN_INCUS yunohost --version
+    $IN_CONTAINER yunohost --version
 
 
     INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
@@ -238,14 +238,14 @@ function update_appci()
 #    #curl --fail --silent https://forge.yunohost.org/yunohost_bullseye.asc | gpg --dearmor > /usr/share/keyrings/yunohost-archive-keyring.gpg
 #
 #    set -x
-#    IN_INCUS="incus exec $NEW_INCUS_BASE --"
+#    IN_CONTAINER="incus exec $NEW_INCUS_BASE --"
 #
 #    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
 #    sleep 5
 #
-#    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-#    $IN_INCUS /bin/bash -c "apt-get update"
-#    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
+#    $IN_CONTAINER /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
+#    $IN_CONTAINER /bin/bash -c "apt-get update"
+#    $IN_CONTAINER /bin/bash -c "apt-get dist-upgrade -y"
 #
 #    incus stop $NEW_INCUS_BASE
 #    _publish_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
@@ -253,17 +253,17 @@ function update_appci()
 #
 #    OLD_INCUS_BASE="ynh-appci-$DIST-$ARCH-stable-base"
 #    NEW_INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-#    IN_INCUS="incus exec $NEW_INCUS_BASE --"
+#    IN_CONTAINER="incus exec $NEW_INCUS_BASE --"
 #
 #    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
 #    sleep 5
 #
-#    $IN_INCUS /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-#    $IN_INCUS /bin/bash -c "apt-get update"
-#    $IN_INCUS /bin/bash -c "apt-get dist-upgrade -y"
+#    $IN_CONTAINER /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
+#    $IN_CONTAINER /bin/bash -c "apt-get update"
+#    $IN_CONTAINER /bin/bash -c "apt-get dist-upgrade -y"
 #
-#    $IN_INCUS /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-#    $IN_INCUS /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
+#    $IN_CONTAINER /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
+#    $IN_CONTAINER /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 #
 #    incus stop $NEW_INCUS_BASE
 #    _publish_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
