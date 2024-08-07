@@ -90,11 +90,11 @@ function rebuild_build_and_lint()
     $IN_CONTAINER dhclient eth0
 
     # Needed to build and access artefacts on core CI ...
-    incus file push ./gitlab-runner-$DEBIAN_VERSION-light.deb $CONTAINER/root/
+    incus file push ./gitlab-runner-light.deb $CONTAINER/root/
     $IN_CONTAINER /bin/bash -c "apt-get update"
     $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install ca-certificates git curl"
-    $IN_CONTAINER /bin/bash -c "dpkg -i /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
-    $IN_CONTAINER /bin/bash -c "rm /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
+    $IN_CONTAINER /bin/bash -c "dpkg -i /root/gitlab-runner-light.deb"
+    $IN_CONTAINER /bin/bash -c "rm /root/gitlab-runner-light.deb"
 
     # This is for
     # a) building .debs
@@ -135,11 +135,11 @@ function rebuild()
     $IN_CONTAINER dhclient eth0
 
     # Needed to build and access artefacts on core CI ...
-    incus file push ./gitlab-runner-$DEBIAN_VERSION-light.deb $CONTAINER/root/
+    incus file push ./gitlab-runner-light.deb $CONTAINER/root/
     $IN_CONTAINER /bin/bash -c "apt update"
     $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install ca-certificates git curl"
-    $IN_CONTAINER /bin/bash -c "dpkg -i /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
-    $IN_CONTAINER /bin/bash -c "rm /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
+    $IN_CONTAINER /bin/bash -c "dpkg -i /root/gitlab-runner-light.deb"
+    $IN_CONTAINER /bin/bash -c "rm /root/gitlab-runner-light.deb"
 
     local INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
 

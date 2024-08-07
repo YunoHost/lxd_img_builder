@@ -1,21 +1,17 @@
 
-# wget -O gitlab-runner-bookworm.deb https://packages.gitlab.com/runner/gitlab-runner/debian/pool/bookworm/main/g/gitlab-runner/gitlab-runner_15.10.0_amd64.deb
-# wget -O gitlab-runner-bullseye.deb https://packages.gitlab.com/runner/gitlab-runner/debian/pool/bullseye/main/g/gitlab-runner/gitlab-runner_15.10.0_amd64.deb
+# wget -O gitlab-runner.deb https://packages.gitlab.com/runner/gitlab-runner/debian/pool/bookworm/main/g/gitlab-runner/gitlab-runner_17.2.1-1_amd64.deb
 
-for DIST in bullseye bookworm
-do
-    ar x gitlab-runner-$DIST.deb
-    bunzip2 data.tar.bz2 
-    tar --delete -f data.tar ./usr/lib
-    bunzip2 -z data.tar
+ar x gitlab-runner.deb
+bunzip2 data.tar.bz2
+tar --delete -f data.tar ./usr/lib
+bunzip2 -z data.tar
 
-    gzip -d control.tar.gz
-    tar -xf control.tar ./md5sums
-    sed -i '/lib\/gitlab-runner/d' md5sums
-    tar -uf control.tar ./md5sums 
-    rm md5sums
-    gzip control.tar
+gzip -d control.tar.gz
+tar -xf control.tar ./md5sums
+sed -i '/lib\/gitlab-runner/d' md5sums
+tar -uf control.tar ./md5sums
+rm md5sums
+gzip control.tar
 
-    ar rcv gitlab-runner-$DIST-light.deb debian-binary control.tar.gz data.tar.bz2
-    rm debian-binary control.tar.gz data.tar.bz2
-done
+ar rcv gitlab-runner-light.deb debian-binary control.tar.gz data.tar.bz2
+rm debian-binary control.tar.gz data.tar.bz2
