@@ -1,6 +1,14 @@
 #!/bin/bash
 
-DEFAULT_ARCH=$(dpkg --print-architecture)
+set -eu
+
+readonly CMD=${1:-help}
+readonly RELEASE=${2:-stable}
+readonly DEBIAN_VERSION=${3:-bullseye}
+readonly ARCH=${4:-$(dpkg --print-architecture)}
+readonly CONTAINER=$RELEASE-$DEBIAN_VERSION-$ARCH
+readonly IN_CONTAINER="incus exec $CONTAINER --"
+[[ "$DEBIAN_VERSION" == "bullseye" ]] && gitbranch="dev" || gitbranch="$DEBIAN_VERSION"
 
 function help()
 {
@@ -13,103 +21,148 @@ Usage: ./image_builder [command] [additional args...]
 
 Commands:
 
-  - rebuild [BRANCH] [DIST]       Rebuild the base and appci image for BRANCH on DIST
-  - update_appci [BRANCH] [DIST]  Update the appci image for BRANCH on DIST
+  - rebuild                [RELEASE] [DEBIAN_VERSION]  Rebuild the base and appci image for RELEASE on DEBIAN_VERSION
+  - update_appci           [RELEASE] [DEBIAN_VERSION]  Update the appci image for RELEASE on DEBIAN_VERSION
+  - rebuild_build_and_lint [RELEASE] [DEBIAN_VERSION]  Rebuild the special 'build-and-lint' image for core CI
 
 Arguments:
 
-  - BRANCH                        stable, testing or unstable
-  - DIST                          bullseye, or bookworm
+  - RELEASE                        stable, testing or unstable
+  - DEBIAN_VERSION                 bullseye, or bookworm
 
 EOF
 }
 
 function main()
 {
+
     KNOWN_COMMANDS=$(declare -F | awk '{print $3}')
-    if [ -z "$1" ] || [ "$1" == "--help" ]
+    if [ "$CMD" == "help" ] || [ "$CMD" == "--help" ]
     then
         help
     elif grep -q -w "$1" <<< "$KNOWN_COMMANDS"
     then
         cmd="$1"
-        shift 1
-        $cmd $@
+        set -x
+        $cmd
     else
         echo "Unknown command '$1', check --help to list available commands"
         exit 1
     fi
 }
 
-function _publish_image()
+function _publish_as()
 {
-    local instance_to_publish=$1
-    local alias_image=$2
+    local shortname="$1"
+    local alias="ynh-$shortname-$DEBIAN_VERSION-$ARCH-$RELEASE-base"
 
     # Save the finger print to delete the old image later
-    local finger_print_to_delete=$(incus image info "$alias_image" | grep Fingerprint | awk '{print $2}')
+    #local finger_print_to_delete=$(incus image info "$alias" | grep Fingerprint | awk '{print $2}')
     local should_restart=0
 
     # If the container is running, stop it
-    if [ "$(incus info $instance_to_publish | grep Status | awk '{print tolower($2)}')" = "running" ]
+    if [ "$(incus info $CONTAINER | grep Status | awk '{print tolower($2)}')" = "running" ]
     then
         should_restart=1
-        incus stop "$instance_to_publish"
+        incus stop "$CONTAINER"
     fi
 
     # Create image before install
-    incus publish "$instance_to_publish" --alias "$alias_image" --reuse --public "${@:3}"
+    incus publish "$CONTAINER" --alias "$alias" --reuse --public "os=YunoHost" "ynh-release=$RELEASE" "release=${DEBIAN_VERSION^}" "architecture=$ARCH" "stage=ynh-$shortname" "description=YunoHost $DEBIAN_VERSION $RELEASE ynh-$shortname $ARCH ($(date '+%Y%m%d'))"
 
     # Remove old image
-    incus image delete "$finger_print_to_delete"
+    #incus image delete "$finger_print_to_delete"
 
     if [ $should_restart = 1 ]
     then
-        incus start "$instance_to_publish"
+        incus start "$CONTAINER"
         sleep 5
+        # 240501: fix because the container was not getting an IP
+        $IN_CONTAINER dhclient eth0
     fi
+}
+
+function rebuild_build_and_lint()
+{
+    incus info $CONTAINER >/dev/null && incus delete $CONTAINER --force
+    incus launch images:debian/$DEBIAN_VERSION/$ARCH $CONTAINER
+    sleep 5
+    $IN_CONTAINER dhclient eth0
+
+    # Needed to build and access artefacts on core CI ...
+    incus file push ./gitlab-runner-$DEBIAN_VERSION-light.deb $CONTAINER/root/
+    $IN_CONTAINER /bin/bash -c "apt-get update"
+    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install ca-certificates git curl"
+    $IN_CONTAINER /bin/bash -c "dpkg -i /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
+    $IN_CONTAINER /bin/bash -c "rm /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
+
+    # This is for
+    # a) building .debs
+    TOOLING_APT_DEPENDENCIES="devscripts build-essential debhelper dpkg-dev dh-python wget"
+    TOOLING_APT_DEPENDENCIES+=" python3 python3-all python3-yaml python3-jinja2 python3-pip python-is-python3"
+    $IN_CONTAINER /bin/bash -c "apt-get update"
+    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install $TOOLING_APT_DEPENDENCIES --no-install-recommends"
+    $IN_CONTAINER /bin/bash -c "apt-get clean"
+
+    # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs
+    TOOLING_PIP_DEPENDENCIES=' hub pip pyOpenSSL tox ansi2html toml black jinja2 types-ipaddress types-enum34 types-cryptography types-toml types-requests types-PyYAML types-pyOpenSSL types-mock "packaging<22"'
+    [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
+    $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
+
+    ###########################################################################
+    _publish_as "build-and-lint"
+    ###########################################################################
+
+    incus stop $CONTAINER
+    incus delete $CONTAINER
+}
+
+function _dependencies_to_preinstall()
+{
+    curl https://raw.githubusercontent.com/YunoHost/yunohost/$gitbranch/debian/control 2> /dev/null | sed -n '/^Depends:/,/^\w/{//!p}' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g" | grep -v "moulinette\|ssowat\|yunohost-portal"
+    curl https://raw.githubusercontent.com/YunoHost/yunohost/$gitbranch/debian/control 2> /dev/null | sed -n '/^Recommends:/,/^\w/{//!p}' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g" | grep -v "yunohost-admin"
+    curl https://raw.githubusercontent.com/YunoHost/moulinette/$gitbranch/debian/control 2> /dev/null | sed -n '/^Depends:/,/^\w/{//!p}' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g"
+    # Same as above, except that all dependencies are in the same line
+    curl https://raw.githubusercontent.com/YunoHost/ssowat/$gitbranch/debian/control 2> /dev/null | grep '^Depends:' | sed 's/Depends://' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g"
 }
 
 function rebuild()
 {
-    local YNH_BRANCH=${1:-stable}
-    local DIST=${2:-bullseye}
-    local ARCH=${3:-$DEFAULT_ARCH}
-    local img_name=$YNH_BRANCH-$DIST-$ARCH
+    incus info $CONTAINER >/dev/null && incus delete $CONTAINER --force
+    incus launch images:debian/$DEBIAN_VERSION/$ARCH $CONTAINER -c security.privileged=true -c security.nesting=true
 
-    set -x
-    incus info $img_name >/dev/null && incus delete $img_name --force
-
-    if [ $DEFAULT_ARCH = $ARCH ];
-    then
-        incus launch images:debian/$DIST/$ARCH $img_name -c security.privileged=true -c security.nesting=true
-    else
-        incus image info $img_name >/dev/null && incus image delete $img_name
-
-        tmp_dir=$(mktemp -d)
-        pushd $tmp_dir
-
-        incus image export images:debian/$DIST/$ARCH
-
-        tar xJf lxd.tar.xz
-        sed -i "0,/architecture: $ARCH/s//architecture: $DEFAULT_ARCH/" metadata.yaml
-        tar cJf lxd.tar.xz metadata.yaml templates
-        incus image import lxd.tar.xz rootfs.squashfs --alias $img_name
-        popd
-        rm -rf "$tmp_dir"
-
-        incus launch $img_name $img_name -c security.privileged=true -c security.nesting=true
-    fi
     sleep 5
+    $IN_CONTAINER dhclient eth0
 
-    IN_CONTAINER="incus exec $img_name --"
+    # Needed to build and access artefacts on core CI ...
+    incus file push ./gitlab-runner-$DEBIAN_VERSION-light.deb $CONTAINER/root/
+    $IN_CONTAINER /bin/bash -c "apt update"
+    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install ca-certificates git curl"
+    $IN_CONTAINER /bin/bash -c "dpkg -i /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
+    $IN_CONTAINER /bin/bash -c "rm /root/gitlab-runner-$DEBIAN_VERSION-light.deb"
 
-    local INSTALL_SCRIPT="https://install.yunohost.org/$DIST"
+    local INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
 
-    $IN_CONTAINER apt install curl -y
+    # Download the YunoHost install script
+    $IN_CONTAINER /bin/bash -c "curl $INSTALL_SCRIPT > install.sh"
+
+    # Disable the install of yunohost itself, because we need this for the core CI
+    $IN_CONTAINER /bin/bash -c "sed -i -E 's/(step\s+install_yunohost_packages)/#\1/' install.sh"
+    $IN_CONTAINER /bin/bash -c "sed -i -E 's/(^\s+install_yunohost_packages)/#\1/'    install.sh"
+
+    # Trick to disable restarting the service during install
+    $IN_CONTAINER /bin/bash -c "sed -i -E 's/(step\s+restart_services)/echo skip restart service #\1/' install.sh"
     $IN_CONTAINER /bin/bash -c "echo exit 101 > /usr/sbin/policy-rc.d"
     $IN_CONTAINER /bin/bash -c "chmod +x /usr/sbin/policy-rc.d"
-    $IN_CONTAINER /bin/bash -c "curl $INSTALL_SCRIPT | bash -s -- -a -d $YNH_BRANCH"
+
+    # Actual install of everything...except yunohost itself
+    $IN_CONTAINER /bin/bash -c "cat install.sh | bash -s -- -a -d $RELEASE"
+
+    # To extract the dependencies, we want to retrieve the lines between "^Dependencies:" and the new line that doesn't start with a space (exclusively) . Then, we remove ",", then we remove the version specifiers "(>= X.Y)", then we add simple quotes to packages when there is a pipe (or) 'php-mysql|php-mysqlnd'.
+    $IN_CONTAINER /bin/bash -c "apt update"
+    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install python3-all $(_dependencies_to_preinstall | tr '\n' ' ')"
+    $IN_CONTAINER /bin/bash -c "apt clean"
+
     $IN_CONTAINER /bin/bash -c "rm /usr/sbin/policy-rc.d"
 
     $IN_CONTAINER systemctl -q disable apt-daily.timer --now
@@ -120,38 +173,48 @@ function rebuild()
     $IN_CONTAINER cp /bin/true /usr/lib/apt/apt.systemd.daily
 
     # Disable services that are useless in the vast majority of cases to try to improve perfs
-    $IN_CONTAINER systemctl -q disable rspamd --now
-    $IN_CONTAINER systemctl -q disable dovecot --now
-    $IN_CONTAINER systemctl -q disable postsrsd --now
-    $IN_CONTAINER systemctl -q disable metronome --now
-    $IN_CONTAINER systemctl -q disable yunohost-api --now
-    $IN_CONTAINER systemctl -q disable fake-hwclock.service --now
-    $IN_CONTAINER systemctl -q disable yunoprompt --now
-    $IN_CONTAINER systemctl -q disable haveged.service --now
-    $IN_CONTAINER systemctl -q disable metronome.service --now
-    $IN_CONTAINER systemctl -q disable unattended-upgrades.service --now
-    $IN_CONTAINER systemctl -q disable e2scrub_all.timer
-    $IN_CONTAINER systemctl -q disable logrotate.timer
-    $IN_CONTAINER systemctl -q disable phpsessionclean.timer
-    $IN_CONTAINER systemctl -q disable systemd-tmpfiles-clean.timer
+    $IN_CONTAINER systemctl -q disable rspamd --now || true
+    $IN_CONTAINER systemctl -q disable dovecot --now || true
+    $IN_CONTAINER systemctl -q disable postsrsd --now || true
+    $IN_CONTAINER systemctl -q disable metronome --now || true
+    $IN_CONTAINER systemctl -q disable fake-hwclock.service --now || true
+    $IN_CONTAINER systemctl -q disable haveged.service --now || true
+    $IN_CONTAINER systemctl -q disable unattended-upgrades.service --now || true
+    $IN_CONTAINER systemctl -q disable e2scrub_all.timer --now || true
+    $IN_CONTAINER systemctl -q disable logrotate.timer --now || true
+    $IN_CONTAINER systemctl -q disable phpsessionclean.timer --now || true
+    $IN_CONTAINER systemctl -q disable systemd-tmpfiles-clean.timer --now || true
 
+    # FIXME: where does this comes from x_x / why
     $IN_CONTAINER sed -i 's/worker_processes.*;/worker_processes 4;/g' /etc/nginx/nginx.conf
 
-    $IN_CONTAINER /bin/bash -c "reboot 0"
+    $IN_CONTAINER reboot 0
     sleep 5
 
+    ###########################################################################
+    _publish_as "before-install"
+    ###########################################################################
+
     # Publish ynh-dev image
-    local INCUS_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
-    _publish_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
+    YUNOHOST_PACKAGES="yunohost yunohost-admin"
+    if [[ $DEBIAN_VERSION == "bookworm" ]]; then
+        YUNOHOST_PACKAGES+=" yunohost-portal"
+    fi
+    $IN_CONTAINER /bin/bash -c "apt update"
+    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install $YUNOHOST_PACKAGES"
+    $IN_CONTAINER /bin/bash -c "apt clean"
+    $IN_CONTAINER systemctl -q disable yunohost-api --now
+    $IN_CONTAINER systemctl -q disable yunoprompt --now
+
+    ###########################################################################
+    _publish_as "dev"
+    ###########################################################################
 
     local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
     local SUBDOMAIN="sub.$DOMAIN"
     local TEST_USER="package_checker"
     local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
-
-    # 240501: fix because the container was not getting an IP
-    $IN_CONTAINER dhclient eth0
 
     # Disable password strength check
     $IN_CONTAINER yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
@@ -163,23 +226,37 @@ function rebuild()
 
     $IN_CONTAINER yunohost --version
 
-    INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-    incus stop $img_name
-    _publish_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
-    incus delete $img_name
-    set +x
+    ###########################################################################
+    _publish_as "appci"
+    ###########################################################################
+
+    CORE_TESTS_APT_DEPENDENCIES="python3-pip"
+    CORE_TESTS_PIP_DEPENCENDIES='mock pip pyOpenSSL pytest pytest-cov pytest-mock pytest-sugar requests-mock "packaging<22"'
+
+    if [[ "$DEBIAN_VERSION" == "bookworm" ]]
+    then
+            # We add php8.2-cli, mariadb-client and mariadb-server to the dependencies for test_app_resources
+            CORE_TESTS_APT_DEPENDENCIES+=" php8.2-cli mariadb-client mariadb-server"
+            CORE_TESTS_PIP_DEPENCENDIES+=" --break-system-packages"
+    fi
+
+    $IN_CONTAINER /bin/bash -c "apt-get update"
+    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install --no-install-recommends $CORE_TESTS_APT_DEPENDENCIES"
+    $IN_CONTAINER /bin/bash -c "apt-get clean"
+    $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $CORE_TESTS_PIP_DEPENCENDIES"
+
+    ###########################################################################
+    _publish_as "core-tests"
+    ###########################################################################
+
+    incus stop $CONTAINER
+    incus delete $CONTAINER
 }
 
 function update_appci()
 {
-    local YNH_BRANCH=${1:-stable}
-    local DIST=${2:-bullseye}
-    local ARCH=${3:-$(dpkg --print-architecture)}
-    local img_name=$YNH_BRANCH-$DIST-$ARCH
-
-    set -x
-    incus launch ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base $img_name -c security.privileged=true -c security.nesting=true
-    IN_CONTAINER="incus exec $img_name --"
+    local BASE="ynh-dev-$DEBIAN_VERSION-$ARCH-$RELEASE-base"
+    incus launch $BASE $CONTAINER -c security.privileged=true -c security.nesting=true
 
     sleep 3
 
@@ -189,8 +266,8 @@ function update_appci()
 
     $IN_CONTAINER ping -c3 deb.debian.org || exit 1
 
-    $IN_CONTAINER apt update
-    $IN_CONTAINER apt dist-upgrade -y
+    $IN_CONTAINER apt-get update
+    $IN_CONTAINER apt-get dist-upgrade -y
 
     local YUNO_PWD="SomeSuperStrongPassword"
     local DOMAIN="domain.tld"
@@ -209,67 +286,9 @@ function update_appci()
     $IN_CONTAINER yunohost --version
 
 
-    INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-    incus stop $img_name
-    _publish_image $img_name $INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
-    incus delete $img_name
-    set +x
+    incus stop $CONTAINER
+    _publish_as "appci"
+    incus delete $CONTAINER
 }
 
-#function from_stable_to_another_version()
-#{
-#    local YNH_BRANCH=${1:-testing}
-#    local DIST=${2:-bullseye}
-#    local ARCH=${3:-$DEFAULT_ARCH}
-#    local BASE_IMG=${4:-stable}
-#    local OLD_INCUS_BASE="ynh-dev-$DIST-$ARCH-$BASE_IMG-base"
-#    local NEW_INCUS_BASE="ynh-dev-$DIST-$ARCH-$YNH_BRANCH-base"
-#
-#    local CUSTOMAPT=/etc/apt/sources.list.d/yunohost.list
-#
-#    if [[ "$YNH_BRANCH" == "testing" ]] ; then
-#        CHANNELS="testing"
-#    elif [[ "$YNH_BRANCH" == "unstable" ]] ; then
-#        CHANNELS="testing unstable"
-#    fi
-#
-#    local CUSTOMDEB="deb [signed-by=/usr/share/keyrings/yunohost-archive-keyring.gpg] http://forge.yunohost.org/debian/ $DIST stable $CHANNELS"
-#
-#    #curl --fail --silent https://forge.yunohost.org/yunohost_bullseye.asc | gpg --dearmor > /usr/share/keyrings/yunohost-archive-keyring.gpg
-#
-#    set -x
-#    IN_CONTAINER="incus exec $NEW_INCUS_BASE --"
-#
-#    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
-#    sleep 5
-#
-#    $IN_CONTAINER /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-#    $IN_CONTAINER /bin/bash -c "apt-get update"
-#    $IN_CONTAINER /bin/bash -c "apt-get dist-upgrade -y"
-#
-#    incus stop $NEW_INCUS_BASE
-#    _publish_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-dev" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-dev $ARCH ($(date '+%Y%m%d'))"
-#    incus delete $NEW_INCUS_BASE
-#
-#    OLD_INCUS_BASE="ynh-appci-$DIST-$ARCH-stable-base"
-#    NEW_INCUS_BASE="ynh-appci-$DIST-$ARCH-$YNH_BRANCH-base"
-#    IN_CONTAINER="incus exec $NEW_INCUS_BASE --"
-#
-#    incus launch $OLD_INCUS_BASE $NEW_INCUS_BASE -c security.privileged=true -c security.nesting=true
-#    sleep 5
-#
-#    $IN_CONTAINER /bin/bash -c "echo '$CUSTOMDEB' > $CUSTOMAPT"
-#    $IN_CONTAINER /bin/bash -c "apt-get update"
-#    $IN_CONTAINER /bin/bash -c "apt-get dist-upgrade -y"
-#
-#    $IN_CONTAINER /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
-#    $IN_CONTAINER /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
-#
-#    incus stop $NEW_INCUS_BASE
-#    _publish_image $NEW_INCUS_BASE $NEW_INCUS_BASE "os=YunoHost" "ynh-release=$YNH_BRANCH" "stage=ynh-appci" "release=${DIST^}" "architecture=$ARCH" "description=YunoHost $DIST $YNH_BRANCH ynh-appci $ARCH ($(date '+%Y%m%d'))"
-#    incus delete $NEW_INCUS_BASE
-#    set +x
-#}
-
 main $@
-
