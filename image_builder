@@ -109,7 +109,7 @@ function rebuild_build_and_lint()
     then
         TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox==4.0.0" ansi2html toml "black>=24.4" jinja2 "packaging<22"'
     else
-        TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox>=4.17" ansi2html toml "black>=24.4" jinja --break-system-packages'
+        TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox>=4.17" ansi2html toml "black>=24.4" jinja2 --break-system-packages'
     fi
     $IN_CONTAINER /bin/bash -c "PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
 
