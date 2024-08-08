@@ -251,7 +251,7 @@ function rebuild()
         YUNOHOST_PACKAGES+=" yunohost-portal"
     fi
     # Do not install vim (in recommends), just to save up space...
-    YUNOHOST_PACKAGES+="vim-"
+    YUNOHOST_PACKAGES+=" vim-"
     $IN_CONTAINER /bin/bash -c "apt update"
     $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install $YUNOHOST_PACKAGES"
     $IN_CONTAINER /bin/bash -c "apt clean"
