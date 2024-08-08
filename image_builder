@@ -105,7 +105,11 @@ function rebuild_build_and_lint()
     $IN_CONTAINER /bin/bash -c "apt-get clean"
 
     # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs
-    TOOLING_PIP_DEPENDENCIES=' hub pip pyOpenSSL tox ansi2html toml black jinja2 types-ipaddress types-enum34 types-cryptography types-toml types-requests types-PyYAML types-pyOpenSSL types-mock "packaging<22"'
+    TOOLING_PIP_DEPENDENCIES='hub pyOpenSSL tox ansi2html toml black jinja2 "packaging<22"'
+    [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
+    $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
+
+    TOOLING_PIP_DEPENDENCIES='types-ipaddress types-enum34 types-cryptography types-toml types-requests types-PyYAML types-pyOpenSSL types-mock'
     [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
     $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
 
