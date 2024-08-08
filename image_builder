@@ -132,7 +132,7 @@ function rebuild_build_and_lint()
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/locale"
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/man"
     $IN_CONTAINER /bin/bash -c "rm -rf /var/lib/apt/lists/*"
-    $IN_CONTAINER /bin/bash -c "apt remove vim --purge || true"
+    $IN_CONTAINER /bin/bash -c "apt remove vim --purge --autoremove || true"
 
     # Disable apt annoyances
     $IN_CONTAINER systemctl -q disable apt-daily.timer --now
@@ -220,7 +220,7 @@ function rebuild()
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/locale"
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/man"
     $IN_CONTAINER /bin/bash -c "rm -rf /var/lib/apt/lists/*"
-    $IN_CONTAINER /bin/bash -c "apt remove vim --purge || true"
+    $IN_CONTAINER /bin/bash -c "apt remove vim --purge --autoremove || true"
 
     # Disable services that are useless in the vast majority of cases to try to improve perfs
     $IN_CONTAINER systemctl -q disable rspamd --now || true
