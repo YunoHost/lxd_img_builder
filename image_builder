@@ -107,7 +107,7 @@ function rebuild_build_and_lint()
     # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs (actually this one is 'hub' in apt dependency right before)
     if [[ $DEBIAN_VERSION == "bullseye" ]]
     then
-        TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox==4.0.0" ansi2html toml "black>=24.4" jinja2 "packaging<22"'
+        TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox==4.0.0" ansi2html toml "black>=22.12" jinja2 "packaging<22"'
     else
         TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox>=4.17" ansi2html toml "black>=24.4" jinja2 --break-system-packages'
     fi
