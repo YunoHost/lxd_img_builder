@@ -109,6 +109,28 @@ function rebuild_build_and_lint()
     [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
     $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
 
+    # Disable mandb because zzzzz: https://stackoverflow.com/questions/69974259/fully-disable-man-db
+    $IN_CONTAINER /bin/bash -c "mv /usr/bin/mandb /usr/bin/mandb-OFF"
+    $IN_CONTAINER /bin/bash -c "cp -p /bin/true /usr/bin/mandb"
+    $IN_CONTAINER /bin/bash -c "rm -r /var/cache/man"
+    $IN_CONTAINER /bin/bash -c "rm /var/lib/man-db/auto-update"
+    $IN_CONTAINER /bin/bash -c "apt-mark hold man-db"
+
+    # Other tricks to save up space (at least 100MB or even 200MB wtf?!)
+    # https://stackoverflow.com/questions/59794891/how-does-debian-differ-from-debian-slim
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/doc"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/info"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/locale"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/man"
+
+    # Disable apt annoyances
+    $IN_CONTAINER systemctl -q disable apt-daily.timer --now
+    $IN_CONTAINER systemctl -q disable apt-daily-upgrade.timer --now
+    $IN_CONTAINER systemctl -q disable apt-daily.service --now
+    $IN_CONTAINER systemctl -q disable apt-daily-upgrade.service --now
+    $IN_CONTAINER rm -f /etc/cron.daily/apt-compat
+    $IN_CONTAINER cp /bin/true /usr/lib/apt/apt.systemd.daily
+
     ###########################################################################
     _publish_as "build-and-lint"
     ###########################################################################
@@ -171,6 +193,20 @@ function rebuild()
     $IN_CONTAINER systemctl -q disable apt-daily-upgrade.service --now
     $IN_CONTAINER rm -f /etc/cron.daily/apt-compat
     $IN_CONTAINER cp /bin/true /usr/lib/apt/apt.systemd.daily
+
+    # Disable mandb because zzzzz: https://stackoverflow.com/questions/69974259/fully-disable-man-db
+    $IN_CONTAINER /bin/bash -c "mv /usr/bin/mandb /usr/bin/mandb-OFF"
+    $IN_CONTAINER /bin/bash -c "cp -p /bin/true /usr/bin/mandb"
+    $IN_CONTAINER /bin/bash -c "rm -r /var/cache/man"
+    $IN_CONTAINER /bin/bash -c "rm /var/lib/man-db/auto-update"
+    $IN_CONTAINER /bin/bash -c "apt-mark hold man-db"
+
+    # Other tricks to save up space (at least 100MB or even 200MB wtf?!)
+    # https://stackoverflow.com/questions/59794891/how-does-debian-differ-from-debian-slim
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/doc"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/info"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/locale"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/man"
 
     # Disable services that are useless in the vast majority of cases to try to improve perfs
     $IN_CONTAINER systemctl -q disable rspamd --now || true
