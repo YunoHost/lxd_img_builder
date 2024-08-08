@@ -92,26 +92,26 @@ function rebuild_build_and_lint()
     # Needed to build and access artefacts on core CI ...
     incus file push ./gitlab-runner-light.deb $CONTAINER/root/
     $IN_CONTAINER /bin/bash -c "apt-get update"
-    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install ca-certificates git curl"
+    $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install ca-certificates git curl --no-install-recommends"
     $IN_CONTAINER /bin/bash -c "dpkg -i /root/gitlab-runner-light.deb"
     $IN_CONTAINER /bin/bash -c "rm /root/gitlab-runner-light.deb"
 
     # This is for
     # a) building .debs
-    TOOLING_APT_DEPENDENCIES="devscripts build-essential debhelper dpkg-dev dh-python wget"
+    TOOLING_APT_DEPENDENCIES="devscripts build-essential debhelper dpkg-dev dh-python wget hub"
     TOOLING_APT_DEPENDENCIES+=" python3 python3-all python3-yaml python3-jinja2 python3-pip python-is-python3"
     $IN_CONTAINER /bin/bash -c "apt-get update"
     $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install $TOOLING_APT_DEPENDENCIES --no-install-recommends"
     $IN_CONTAINER /bin/bash -c "apt-get clean"
 
     # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs
-    TOOLING_PIP_DEPENDENCIES='hub pyOpenSSL tox ansi2html toml black jinja2 "packaging<22"'
+    TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox>=4.17" ansi2html toml "black>=24.4" jinja2 "packaging<22"'
     [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
-    $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
+    $IN_CONTAINER /bin/bash -c "PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
 
     TOOLING_PIP_DEPENDENCIES='types-ipaddress types-enum34 types-cryptography types-toml types-requests types-PyYAML types-pyOpenSSL types-mock'
     [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
-    $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
+    $IN_CONTAINER /bin/bash -c "PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES"
 
     # Disable mandb because zzzzz: https://stackoverflow.com/questions/69974259/fully-disable-man-db
     $IN_CONTAINER /bin/bash -c "mv /usr/bin/mandb /usr/bin/mandb-OFF"
@@ -124,6 +124,7 @@ function rebuild_build_and_lint()
     # https://stackoverflow.com/questions/59794891/how-does-debian-differ-from-debian-slim
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/doc"
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/info"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/i18n"
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/locale"
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/man"
 
@@ -209,8 +210,9 @@ function rebuild()
     # https://stackoverflow.com/questions/59794891/how-does-debian-differ-from-debian-slim
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/doc"
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/info"
+    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/i18n"
     $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/locale"
-    $IN_CONTAINER /bin/bash -c "rm -rf /usr/share/man"
+    $IN_CONTAINER /bin/bash -c "rm -rf /var/lib/apt/lists/*"
 
     # Disable services that are useless in the vast majority of cases to try to improve perfs
     $IN_CONTAINER systemctl -q disable rspamd --now || true
@@ -240,11 +242,14 @@ function rebuild()
     if [[ $DEBIAN_VERSION == "bookworm" ]]; then
         YUNOHOST_PACKAGES+=" yunohost-portal"
     fi
+    # Do not install vim (in recommends), just to save up space...
+    YUNOHOST_PACKAGES+="vim-"
     $IN_CONTAINER /bin/bash -c "apt update"
     $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install $YUNOHOST_PACKAGES"
     $IN_CONTAINER /bin/bash -c "apt clean"
     $IN_CONTAINER systemctl -q disable yunohost-api --now
     $IN_CONTAINER systemctl -q disable yunoprompt --now
+    $IN_CONTAINER /bin/bash -c "rm -rf /var/lib/apt/lists/*"
 
     ###########################################################################
     _publish_as "dev"
@@ -264,7 +269,7 @@ function rebuild()
 
     $IN_CONTAINER yunohost domain add $SUBDOMAIN
 
-    $IN_CONTAINER yunohost --version
+    $IN_CONTAINER /bin/bash -c "rm -rf /var/lib/apt/lists/*"
 
     ###########################################################################
     _publish_as "appci"
@@ -283,7 +288,9 @@ function rebuild()
     $IN_CONTAINER /bin/bash -c "apt-get update"
     $IN_CONTAINER /bin/bash -c "DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get --assume-yes install --no-install-recommends $CORE_TESTS_APT_DEPENDENCIES"
     $IN_CONTAINER /bin/bash -c "apt-get clean"
-    $IN_CONTAINER /bin/bash -c "PIP_PROGRESS_BAR='off' python3 -m pip install -U $CORE_TESTS_PIP_DEPENCENDIES"
+    $IN_CONTAINER /bin/bash -c "PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $CORE_TESTS_PIP_DEPENCENDIES"
+
+    $IN_CONTAINER /bin/bash -c "rm -rf /var/lib/apt/lists/*"
 
     ###########################################################################
     _publish_as "core-tests"
