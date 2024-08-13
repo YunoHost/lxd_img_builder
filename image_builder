@@ -269,9 +269,9 @@ function rebuild()
     local TEST_USER="package_checker"
     local TEST_USER_DISPLAY=${TEST_USER//"_"/""}
 
-    # Disable password strength check
     $IN_CONTAINER yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
 
+    # Disable password strength check for convenience on the app CI
     $IN_CONTAINER /bin/bash -c "echo 'admin_strength: -1' >> /etc/yunohost/settings.yml"
     $IN_CONTAINER /bin/bash -c "echo 'user_strength: -1' >> /etc/yunohost/settings.yml"
 
@@ -282,6 +282,10 @@ function rebuild()
     ###########################################################################
     _publish_as "appci"
     ###########################################################################
+
+    # Reneable default password strength check
+    $IN_CONTAINER /bin/bash -c "sed -i '/admin_strength/d' /etc/yunohost/settings.yml"
+    $IN_CONTAINER /bin/bash -c "sed -i '/user_strength/d' /etc/yunohost/settings.yml"
 
     CORE_TESTS_APT_DEPENDENCIES="python3-pip"
     CORE_TESTS_PIP_DEPENCENDIES='mock pip pyOpenSSL pytest pytest-cov pytest-mock pytest-sugar requests-mock "packaging<22"'
