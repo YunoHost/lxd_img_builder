@@ -129,11 +129,11 @@ function slimify()
     apt clean
 
     # Disable mandb because zzzzz: https://stackoverflow.com/questions/69974259/fully-disable-man-db
-    mv /usr/bin/mandb /usr/bin/mandb-OFF
+    mv /usr/bin/mandb /usr/bin/mandb-OFF || true
     cp -p /bin/true /usr/bin/mandb
-    rm -r /var/cache/man
-    rm /var/lib/man-db/auto-update
-    apt-mark hold man-db
+    rm -rf /var/cache/man
+    rm -f /var/lib/man-db/auto-update
+    apt-mark hold man-db || true
 
     # Other tricks to save up space (at least 100MB or even 200MB wtf?!)
     # https://stackoverflow.com/questions/59794891/how-does-debian-differ-from-debian-slim
