@@ -86,7 +86,9 @@ function _publish_as()
     fi
 
     # Create image before install
-    incus publish "$CONTAINER" --alias "$alias" --reuse --public "os=YunoHost" "ynh-release=$RELEASE" "release=${DEBIAN_VERSION^}" "architecture=$ARCH" "stage=ynh-$shortname" "description=YunoHost $DEBIAN_VERSION $RELEASE ynh-$shortname $ARCH ($(date '+%Y%m%d'))"
+    incus publish "$CONTAINER" --alias "$alias" --reuse --public "os=YunoHost" "ynh-release=$RELEASE" \
+        "release=${DEBIAN_VERSION^}" "architecture=$ARCH" "stage=ynh-$shortname" \
+        "description=YunoHost $DEBIAN_VERSION $RELEASE ynh-$shortname $ARCH ($(date '+%Y%m%d'))"
 
     # Remove old image
     #incus image delete "$finger_print_to_delete"
