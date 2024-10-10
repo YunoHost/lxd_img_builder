@@ -56,8 +56,12 @@ function main()
 function _run_function_in_container()
 {
     CODE=$(type $1 | sed '1,3d;$d' | sed -e "s/\$RELEASE/$RELEASE/g" -e "s/\$DEBIAN_VERSION/$DEBIAN_VERSION/g" -e "s/\$gitbranch/$gitbranch/g")
-    cat << EOF | incus exec $CONTAINER
+    cat << EOF | incus exec $CONTAINER bash
 set -eux
+export SUDO_FORCE_REMOVE=yes
+export DEBIAN_FRONTEND=noninteractive
+export PIP_NO_CACHE_DIR=1
+export PIP_PROGRESS_BAR=off
 $CODE
 EOF
 }
@@ -74,7 +78,7 @@ function _publish_as()
     local should_restart=0
 
     # If the container is running, stop it
-    if [ "$(incus info $CONTAINER >/dev/null 2>/dev/null | grep Status | awk '{print tolower($2)}')" = "running" ]
+    if [ "$(incus info $CONTAINER 2>/dev/null | grep Status | awk '{print tolower($2)}')" = "running" ]
     then
         should_restart=1
         incus stop "$CONTAINER"
@@ -138,8 +142,11 @@ function update_appci()
 {
     local BASE="ynh-dev-$DEBIAN_VERSION-$ARCH-$RELEASE-base"
     incus launch $BASE $CONTAINER -c security.privileged=true -c security.nesting=true
+    sleep 5
+    $IN_CONTAINER dhclient eth0
 
     $IN_CONTAINER apt update
+    $IN_CONTAINER apt install yunohost yunohost-admin ssowat moulinette -y --reinstall
     $IN_CONTAINER apt full-upgrade --assume-yes
 
     _run_function_in_container appci && _publish_as appci
