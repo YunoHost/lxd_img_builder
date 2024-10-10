@@ -85,6 +85,14 @@ function _publish_as()
         "release=${DEBIAN_VERSION^}" "architecture=$ARCH" "stage=ynh-$shortname" \
         "description=YunoHost $DEBIAN_VERSION $RELEASE ynh-$shortname $ARCH ($(date '+%Y%m%d'))"
 
+    # Publish it to the simplestreams repo
+    if [[ -n "${SIMPLESTREAMS_REPO:-}" ]]; then
+        images_dir="$PWD/images"
+        mkdir -p "$images_dir"
+        ( cd "$images_dir" && incus export "$alias" "$alias" )
+        ( cd "$SIMPLESTREAMS_REPO" && incus-simplestreams add "$images_dir/$alias.tar.gz" )
+    fi
+
     # Remove old image
     #incus image delete "$finger_print_to_delete"
 
