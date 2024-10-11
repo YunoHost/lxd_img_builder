@@ -56,7 +56,7 @@ function main()
 function _run_function_in_container()
 {
     CODE=$(type $1 | sed '1,3d;$d' | sed -e "s/\$RELEASE/$RELEASE/g" -e "s/\$DEBIAN_VERSION/$DEBIAN_VERSION/g" -e "s/\$gitbranch/$gitbranch/g")
-    cat << EOF | incus exec $CONTAINER
+    cat << EOF | incus exec $CONTAINER bash
 set -eux
 $CODE
 EOF
