@@ -138,7 +138,8 @@ function slimify()
 
     # Other tricks to save up space (at least 100MB or even 200MB wtf?!)
     # https://stackoverflow.com/questions/59794891/how-does-debian-differ-from-debian-slim
-    rm -rf /usr/share/doc
+    # We don't want to delete /usr/share/doc/yunohost tho because it contains the changelog which is needed to compute the version
+    find /usr/share/doc/* -maxdepth 1 -type d | grep -v "yunohost\|moulinette\|ssowat" | xargs rm -rf
     rm -rf /usr/share/info
     rm -rf /usr/share/i18n
     rm -rf /usr/share/locale
