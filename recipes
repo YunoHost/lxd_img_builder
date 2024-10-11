@@ -1,11 +1,13 @@
 #!/bin/bash
 
+export SUDO_FORCE_REMOVE=yes
+export DEBIAN_FRONTEND=noninteractive
+
 function build_and_lint()
 {
-    APT_INSTALL="apt-get update && DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install --no-install-recommends"
-
     # Needed to build and access artefacts on core CI ...
-    $APT_INSTALL ca-certificates git curl
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates git curl
     dpkg -i /root/gitlab-runner-light.deb
     rm /root/gitlab-runner-light.deb
 
@@ -13,7 +15,7 @@ function build_and_lint()
     # a) building .debs
     TOOLING_APT_DEPENDENCIES="devscripts build-essential debhelper dpkg-dev dh-python wget hub"
     TOOLING_APT_DEPENDENCIES+=" python3 python3-all python3-yaml python3-jinja2 python3-pip python-is-python3"
-    $APT_INSTALL $TOOLING_APT_DEPENDENCIES
+    apt-get install -y --no-install-recommends $TOOLING_APT_DEPENDENCIES
 
     # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs (actually this one is 'hub' in apt dependency right before)
     if [[ $DEBIAN_VERSION == "bullseye" ]]
@@ -31,10 +33,10 @@ function build_and_lint()
 
 function before_install()
 {
-    APT_INSTALL="apt-get update && DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install --no-install-recommends"
 
     # Needed to build and access artefacts on core CI ...
-    $APT_INSTALL ca-certificates git curl
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates git curl
     dpkg -i /root/gitlab-runner-light.deb
     rm /root/gitlab-runner-light.deb
 
@@ -63,9 +65,7 @@ function before_install()
     )
 
     # To extract the dependencies, we want to retrieve the lines between "^Dependencies:" and the new line that doesn't start with a space (exclusively) . Then, we remove ",", then we remove the version specifiers "(>= X.Y)", then we add simple quotes to packages when there is a pipe (or) 'php-mysql|php-mysqlnd'.
-    APT_INSTALL="apt-get update && DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install"
-    export SUDO_FORCE_REMOVE=yes
-    $APT_INSTALL python3-all $(echo $DEPENDENCIES_TO_PREINSTALL | tr '\n' ' ')
+    apt-get install -y python3-all $(echo $DEPENDENCIES_TO_PREINSTALL | tr '\n' ' ')
 
     rm /usr/sbin/policy-rc.d
 
@@ -81,9 +81,8 @@ function dev()
     fi
     # Do not install vim (in recommends), just to save up space...
     YUNOHOST_PACKAGES+=" vim-"
-    export SUDO_FORCE_REMOVE=yes
-    APT_INSTALL="apt-get update && DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install"
-    $APT_INSTALL $YUNOHOST_PACKAGES
+    apt-get update
+    apt-get install -y $YUNOHOST_PACKAGES
 }
 
 function appci()
@@ -119,8 +118,8 @@ function core_tests()
             CORE_TESTS_PIP_DEPENCENDIES+=" --break-system-packages"
     fi
 
-    APT_INSTALL="apt-get update && DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install --no-install-recommends"
-    $APT_INSTALL $CORE_TESTS_APT_DEPENDENCIES
+    apt-get update
+    apt-get install -y --no-install-recommends $CORE_TESTS_APT_DEPENDENCIES
     PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $CORE_TESTS_PIP_DEPENCENDIES
 }
 
