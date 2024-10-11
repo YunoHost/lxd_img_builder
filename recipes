@@ -2,6 +2,8 @@
 
 export SUDO_FORCE_REMOVE=yes
 export DEBIAN_FRONTEND=noninteractive
+export PIP_NO_CACHE_DIR=1
+export PIP_PROGRESS_BAR=off
 
 function build_and_lint()
 {
@@ -20,15 +22,15 @@ function build_and_lint()
     # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs (actually this one is 'hub' in apt dependency right before)
     if [[ $DEBIAN_VERSION == "bullseye" ]]
     then
-        TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox==4.0.0" ansi2html toml "black>=22.12" jinja2 "packaging<22"'
+        TOOLING_PIP_DEPENDENCIES='pyOpenSSL tox==4.0.0 ansi2html toml black>=22.12 jinja2 packaging<22'
     else
-        TOOLING_PIP_DEPENDENCIES='pyOpenSSL "tox>=4.17" ansi2html toml "black>=24.4" jinja2 --break-system-packages'
+        TOOLING_PIP_DEPENDENCIES='pyOpenSSL tox>=4.17 ansi2html toml black>=24.4 jinja2 --break-system-packages'
     fi
-    PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES
+    python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES
 
     TOOLING_PIP_DEPENDENCIES='types-ipaddress types-enum34 types-cryptography types-toml types-requests types-PyYAML types-pyOpenSSL types-mock'
     [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
-    PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES
+    python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES
 }
 
 function before_install()
@@ -109,7 +111,7 @@ function core_tests()
     sed -i '/user_strength/d' /etc/yunohost/settings.yml
 
     CORE_TESTS_APT_DEPENDENCIES="python3-pip"
-    CORE_TESTS_PIP_DEPENCENDIES='mock pip pyOpenSSL pytest pytest-cov pytest-mock pytest-sugar requests-mock "packaging<22"'
+    CORE_TESTS_PIP_DEPENCENDIES='mock pip pyOpenSSL pytest pytest-cov pytest-mock pytest-sugar requests-mock packaging<22'
 
     if [[ "$DEBIAN_VERSION" == "bookworm" ]]
     then
@@ -120,7 +122,7 @@ function core_tests()
 
     apt-get update
     apt-get install -y --no-install-recommends $CORE_TESTS_APT_DEPENDENCIES
-    PIP_NO_CACHE_DIR=1 PIP_PROGRESS_BAR='off' python3 -m pip install -U $CORE_TESTS_PIP_DEPENCENDIES
+    python3 -m pip install -U $CORE_TESTS_PIP_DEPENCENDIES
 }
 
 function slimify()
