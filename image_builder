@@ -142,6 +142,7 @@ function update_appci()
     $IN_CONTAINER dhclient eth0
 
     $IN_CONTAINER apt update
+    $IN_CONTAINER apt install yunohost yunohost-admin ssowat moulinette -y --reinstall
     $IN_CONTAINER apt full-upgrade --assume-yes
 
     _run_function_in_container appci && _publish_as appci
