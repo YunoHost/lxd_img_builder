@@ -1,10 +1,5 @@
 #!/bin/bash
 
-export SUDO_FORCE_REMOVE=yes
-export DEBIAN_FRONTEND=noninteractive
-export PIP_NO_CACHE_DIR=1
-export PIP_PROGRESS_BAR=off
-
 function build_and_lint()
 {
     # Needed to build and access artefacts on core CI ...
