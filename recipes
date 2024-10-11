@@ -1,45 +1,68 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+set -x
+
+# This script expects those variables to be defined:
+# RELEASE, DEBIAN_VERSION, gitbranch
+
+export PIP_NO_CACHE_DIR=1
+export PIP_PROGRESS_BAR=off
+
+function apt_yes()
+{
+    SUDO_FORCE_REMOVE=yes DEBIAN_FRONTEND=noninteractive \
+        apt-get -y --no-install-recommends "$@"
+}
+
+
+function install_gitlab_runner_light()
+{
+    # Needed to build and access artefacts on core CI ...
+    apt_yes install /root/gitlab-runner-light.deb
+    rm /root/gitlab-runner-light.deb
+}
+
 
 function build_and_lint()
 {
-    # Needed to build and access artefacts on core CI ...
-    apt-get update
-    apt-get install -y --no-install-recommends ca-certificates git curl
-    dpkg -i /root/gitlab-runner-light.deb
-    rm /root/gitlab-runner-light.deb
+    apt_yes update
+    apt_yes upgrade
+    install_gitlab_runner_light
 
     # This is for
     # a) building .debs
-    TOOLING_APT_DEPENDENCIES="devscripts build-essential debhelper dpkg-dev dh-python wget hub"
-    TOOLING_APT_DEPENDENCIES+=" python3 python3-all python3-yaml python3-jinja2 python3-pip python-is-python3"
-    apt-get install -y --no-install-recommends $TOOLING_APT_DEPENDENCIES
+    TOOLING_APT_DEPENDENCIES=(
+        devscripts build-essential debhelper dpkg-dev dh-python wget hub
+        python3 python3-all python3-yaml python3-jinja2 python3-pip python-is-python3
+    )
+    apt_yes install "${TOOLING_APT_DEPENDENCIES[@]}"
 
     # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs (actually this one is 'hub' in apt dependency right before)
-    if [[ $DEBIAN_VERSION == "bullseye" ]]
-    then
-        TOOLING_PIP_DEPENDENCIES='pyOpenSSL tox==4.0.0 ansi2html toml black>=22.12 jinja2 packaging<22'
-    else
-        TOOLING_PIP_DEPENDENCIES='pyOpenSSL tox>=4.17 ansi2html toml black>=24.4 jinja2 --break-system-packages'
-    fi
-    python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES
+    TOOLING_PIP_DEPENDENCIES=(
+        pyOpenSSL ansi2html toml jinja2
+        types-ipaddress types-enum34 types-cryptography types-toml
+        types-requests types-PyYAML types-pyOpenSSL types-mock
+    )
 
-    TOOLING_PIP_DEPENDENCIES='types-ipaddress types-enum34 types-cryptography types-toml types-requests types-PyYAML types-pyOpenSSL types-mock'
-    [[ $DEBIAN_VERSION == "bullseye" ]] || TOOLING_PIP_DEPENDENCIES+=" --break-system-packages"
-    python3 -m pip install -U $TOOLING_PIP_DEPENDENCIES
+    if [[ $DEBIAN_VERSION == "bullseye" ]]; then
+        TOOLING_PIP_DEPENDENCIES+=("tox==4.0.0" "black>=22.12" "packaging<22")
+    else
+        TOOLING_PIP_DEPENDENCIES+=("tox>=4.17" "black>=24.4" --break-system-packages)
+    fi
+
+    python3 -m pip install -U "${TOOLING_PIP_DEPENDENCIES[@]}"
 }
+
 
 function before_install()
 {
-
-    # Needed to build and access artefacts on core CI ...
-    apt-get update
-    apt-get install -y --no-install-recommends ca-certificates git curl
-    dpkg -i /root/gitlab-runner-light.deb
-    rm /root/gitlab-runner-light.deb
+    apt_yes update
+    apt_yes upgrade
+    install_gitlab_runner_light
 
     # Download the YunoHost install script
     INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
-    curl $INSTALL_SCRIPT > install.sh
+    curl "$INSTALL_SCRIPT" -o install.sh
 
     # Disable the install of yunohost itself, because we need this for the core CI
     sed -i -E 's/(step\s+install_yunohost_packages)/#\1/' install.sh
@@ -51,18 +74,30 @@ function before_install()
     chmod +x /usr/sbin/policy-rc.d
 
     # Actual install of everything...except yunohost itself
-    cat install.sh | bash -s -- -a -d $RELEASE
+    chmod +x install.sh
+    ./install.sh -a -d "$RELEASE"
+    rm install.sh
 
-    DEPENDENCIES_TO_PREINSTALL=$(
-        curl https://raw.githubusercontent.com/YunoHost/yunohost/$gitbranch/debian/control 2> /dev/null | sed -n '/^Depends:/,/^\w/{//!p}' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g" | grep -v "moulinette\|ssowat\|yunohost-portal";
-        curl https://raw.githubusercontent.com/YunoHost/yunohost/$gitbranch/debian/control 2> /dev/null | sed -n '/^Recommends:/,/^\w/{//!p}' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g" | grep -v "yunohost-admin";
-        curl https://raw.githubusercontent.com/YunoHost/moulinette/$gitbranch/debian/control 2> /dev/null | sed -n '/^Depends:/,/^\w/{//!p}' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g";
+    # Extract the dependencies from control files
+    curl -L "https://raw.githubusercontent.com/YunoHost/yunohost/$gitbranch/debian/control" -o yunohost_control
+    curl -L "https://raw.githubusercontent.com/YunoHost/moulinette/$gitbranch/debian/control" -o moulinette_control
+    curl -L "https://raw.githubusercontent.com/YunoHost/ssowat/$gitbranch/debian/control" -o ssowat_control
+
+    # To extract the dependencies, we want to retrieve the lines between "^Dependencies:" and the new line that doesn't
+    # start with a space (exclusively) . Then, we remove ",", then we remove the version specifiers "(>= X.Y)",
+    # then we add simple quotes to packages when there is a pipe (or) 'php-mysql|php-mysqlnd'.
+    deps="$(
+        sed -n '/^Depends:/,/^\w/{//!p}' yunohost_control | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g" | grep -v "moulinette\|ssowat\|yunohost-portal" ;
+        sed -n '/^Recommends:/,/^\w/{//!p}' yunohost_control | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g" | grep -v "yunohost-admin" ;
+        sed -n '/^Depends:/,/^\w/{//!p}' moulinette_control | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g" ;
         # Same as above, except that all dependencies are in the same line
-        curl https://raw.githubusercontent.com/YunoHost/ssowat/$gitbranch/debian/control 2> /dev/null | grep '^Depends:' | sed 's/Depends://' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g";
-    )
+        grep '^Depends:' ssowat_control | sed 's/Depends://' | sed -e "s/,//g" -e "s/[(][^)]*[)]//g" -e "s/ | \S\+//g"
+    )"
+    readarray -t all_deps < <(echo "$deps" | xargs | tr " " "\n")
 
-    # To extract the dependencies, we want to retrieve the lines between "^Dependencies:" and the new line that doesn't start with a space (exclusively) . Then, we remove ",", then we remove the version specifiers "(>= X.Y)", then we add simple quotes to packages when there is a pipe (or) 'php-mysql|php-mysqlnd'.
-    apt-get install -y python3-all $(echo $DEPENDENCIES_TO_PREINSTALL | tr '\n' ' ')
+    rm yunohost_control moulinette_control ssowat_control
+
+    apt_yes install python3-all "${all_deps[@]}"
 
     rm /usr/sbin/policy-rc.d
 
@@ -72,14 +107,17 @@ function before_install()
 
 function dev()
 {
-    YUNOHOST_PACKAGES="yunohost yunohost-admin"
-    if [[ $DEBIAN_VERSION == "bookworm" ]]; then
-        YUNOHOST_PACKAGES+=" yunohost-portal"
-    fi
-    # Do not install vim (in recommends), just to save up space...
-    YUNOHOST_PACKAGES+=" vim-"
-    apt-get update
-    apt-get install -y $YUNOHOST_PACKAGES
+    apt_yes update
+    apt_yes upgrade
+    install_gitlab_runner_light
+
+    # Download and run the YunoHost install script
+    curl "https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION" -o install.sh
+    chmod +x install.sh
+    ./install.sh -a -d "$RELEASE"
+    rm install.sh
+
+    apt_yes autoremove vim
 }
 
 function appci()
@@ -90,13 +128,13 @@ function appci()
     TEST_USER="package_checker"
     TEST_USER_DISPLAY=${TEST_USER//"_"/""}
 
-    yunohost tools postinstall --domain $DOMAIN --password $YUNO_PWD --username $TEST_USER --fullname "$TEST_USER_DISPLAY"
+    yunohost tools postinstall --domain "$DOMAIN" --password "$YUNO_PWD" --username "$TEST_USER" --fullname "$TEST_USER_DISPLAY"
 
     # Disable password strength check for convenience on the app CI
     echo 'admin_strength: -1' >> /etc/yunohost/settings.yml
     echo 'user_strength: -1' >> /etc/yunohost/settings.yml
 
-    yunohost domain add $SUBDOMAIN
+    yunohost domain add "$SUBDOMAIN"
 }
 
 function core_tests()
@@ -105,24 +143,23 @@ function core_tests()
     sed -i '/admin_strength/d' /etc/yunohost/settings.yml
     sed -i '/user_strength/d' /etc/yunohost/settings.yml
 
-    CORE_TESTS_APT_DEPENDENCIES="python3-pip"
-    CORE_TESTS_PIP_DEPENCENDIES='mock pip pyOpenSSL pytest pytest-cov pytest-mock pytest-sugar requests-mock packaging<22'
+    CORE_TESTS_APT_DEPENDENCIES=(python3-pip)
+    CORE_TESTS_PIP_DEPENCENDIES=(mock pip pyOpenSSL pytest pytest-cov pytest-mock pytest-sugar requests-mock "packaging<22")
 
-    if [[ "$DEBIAN_VERSION" == "bookworm" ]]
-    then
-            # We add php8.2-cli, mariadb-client and mariadb-server to the dependencies for test_app_resources
-            CORE_TESTS_APT_DEPENDENCIES+=" php8.2-cli mariadb-client mariadb-server"
-            CORE_TESTS_PIP_DEPENCENDIES+=" --break-system-packages"
+    if [[ "$DEBIAN_VERSION" == "bookworm" ]]; then
+        # We add php8.2-cli, mariadb-client and mariadb-server to the dependencies for test_app_resources
+        CORE_TESTS_APT_DEPENDENCIES+=(php8.2-cli mariadb-client mariadb-server)
+        CORE_TESTS_PIP_DEPENCENDIES+=(--break-system-packages)
     fi
 
-    apt-get update
-    apt-get install -y --no-install-recommends $CORE_TESTS_APT_DEPENDENCIES
-    python3 -m pip install -U $CORE_TESTS_PIP_DEPENCENDIES
+    apt_yes update
+    apt_yes install "${CORE_TESTS_APT_DEPENDENCIES[@]}"
+    python3 -m pip install -U "${CORE_TESTS_PIP_DEPENCENDIES[@]}"
 }
 
 function slimify()
 {
-    apt clean
+    apt_yes clean
 
     # Disable mandb because zzzzz: https://stackoverflow.com/questions/69974259/fully-disable-man-db
     mv /usr/bin/mandb /usr/bin/mandb-OFF || true
@@ -134,7 +171,8 @@ function slimify()
     # Other tricks to save up space (at least 100MB or even 200MB wtf?!)
     # https://stackoverflow.com/questions/59794891/how-does-debian-differ-from-debian-slim
     # We don't want to delete /usr/share/doc/yunohost tho because it contains the changelog which is needed to compute the version
-    find /usr/share/doc/* -maxdepth 1 -type d | grep -v "yunohost\|moulinette\|ssowat" | xargs rm -rf
+    find /usr/share/doc -mindepth 1 -maxdepth 1 -type d -not \( -name "yunohost*" -or -name moulinette -or -name ssowat \) \
+        -exec rm -rf {} \;
     rm -rf /usr/share/info
     rm -rf /usr/share/i18n
     rm -rf /usr/share/locale
@@ -166,3 +204,5 @@ function slimify()
     systemctl -q disable yunohost-api --now || true
     systemctl -q disable yunoprompt --now || true
 }
+
+"$1"
