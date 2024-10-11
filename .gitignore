@@ -2,3 +2,7 @@
 gitlab-runner*.deb
 gitlab_runner/
 *_control
+
+images/
+
+.pdm*
