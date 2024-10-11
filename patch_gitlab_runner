@@ -1,7 +1,15 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+set -x
 
-# wget -O gitlab-runner.deb https://packages.gitlab.com/runner/gitlab-runner/debian/pool/bookworm/main/g/gitlab-runner/gitlab-runner_17.2.1-1_amd64.deb
+if [ ! -f "gitlab-runner.deb" ]; then
+    wget -O gitlab-runner.deb https://packages.gitlab.com/runner/gitlab-runner/debian/pool/bookworm/main/g/gitlab-runner/gitlab-runner_17.2.1-1_amd64.deb
+fi
 
-ar x gitlab-runner.deb
+mkdir -p gitlab_runner
+pushd gitlab_runner
+
+ar x ../gitlab-runner.deb
 bunzip2 data.tar.bz2
 tar --delete -f data.tar ./usr/lib
 bunzip2 -z data.tar
@@ -13,5 +21,7 @@ tar -uf control.tar ./md5sums
 rm md5sums
 gzip control.tar
 
-ar rcv gitlab-runner-light.deb debian-binary control.tar.gz data.tar.bz2
-rm debian-binary control.tar.gz data.tar.bz2
+ar rcv ../gitlab-runner-light.deb debian-binary control.tar.gz data.tar.bz2
+
+popd
+rm -rf gitlab_runner
