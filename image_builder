@@ -74,7 +74,7 @@ function _publish_as()
     local should_restart=0
 
     # If the container is running, stop it
-    if [ "$(incus info $CONTAINER >/dev/null 2>/dev/null | grep Status | awk '{print tolower($2)}')" = "running" ]
+    if [ "$(incus info $CONTAINER 2>/dev/null | grep Status | awk '{print tolower($2)}')" = "running" ]
     then
         should_restart=1
         incus stop "$CONTAINER"
