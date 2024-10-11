@@ -138,6 +138,8 @@ function update_appci()
 {
     local BASE="ynh-dev-$DEBIAN_VERSION-$ARCH-$RELEASE-base"
     incus launch $BASE $CONTAINER -c security.privileged=true -c security.nesting=true
+    sleep 5
+    $IN_CONTAINER dhclient eth0
 
     $IN_CONTAINER apt update
     $IN_CONTAINER apt full-upgrade --assume-yes
