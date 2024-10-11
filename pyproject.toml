@@ -1,0 +1,17 @@
+[project]
+name = "lxc_img_builder"
+version = "0.1.0"
+description = "Yunohost LXC/Incus image builder"
+authors = [{name = "YunoHost", email = "yunohost@yunohost.org"}]
+readme = "README.md"
+license = {text = "AGPL-3.0"}
+
+requires-python = ">=3.10"
+
+dependencies = [
+    "PyYAML>=6.0"
+]
+
+
+[tool.pdm]
+distribution = false
