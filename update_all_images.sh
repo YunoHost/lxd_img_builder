@@ -8,7 +8,9 @@ status=0
 
 update_image() {
     properties=("$@")
-    if ! "$SCRIPT_DIR/image_builder.py" -o "$REPO" "${properties[@]}" &> "$SCRIPT_DIR/build_bullseye_stable_$variant.log"; then
+    logfile_name="$(IFS=_ ; echo "${properties[*]}")"
+    echo "############### Building ${properties[*]}..."
+    if ! "$SCRIPT_DIR/image_builder.py" -o "$REPO" "${properties[@]}" -l "$SCRIPT_DIR/$logfile_name.log"; then
         echo "Could not build image ${properties[*]}!"
         status=1
     fi
