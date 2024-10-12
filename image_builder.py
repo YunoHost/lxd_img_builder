@@ -2,12 +2,12 @@
 
 import argparse
 import os
+import logging
 import platform
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Any, Optional
+from typing import Optional
 
 import yaml
 
@@ -29,22 +29,21 @@ class Incus:
             return "armhf"
         raise RuntimeError(f"Unknown platform {plat}!")
 
-    def _run(self, *args: str, capture: bool = True, **kwargs) -> str:
+    def _run(self, *args: str, **kwargs) -> str:
         command = ["incus"] + [*args]
-        if capture:
-            return subprocess.check_output(command, **kwargs).decode("utf-8")
-        else:
-            subprocess.run(
-                command, stdout=sys.stdout, stderr=sys.stderr, check=True, **kwargs
-            )
-            return ""
+        return subprocess.check_output(command, **kwargs).decode("utf-8")
 
-    # def _run_popen(self, *args: str) -> subprocess.Popen:
-    #     command = ["incus"] + [*args]
-    #     proc = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr,
-    #                             #, text=True, bufsize=1, close_fds=True
-    #                             )
-    #     return proc
+    def _run_logged_prefixed(self, *args: str, prefix: str = "", **kwargs) -> None:
+        command = ["incus"] + [*args]
+
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs)
+        assert process.stdout
+        with process.stdout:
+            for line in iter(process.stdout.readline, b''): # b'\n'-separated lines
+                logging.debug("%s%s", prefix, line.decode("utf-8").rstrip("\n"))
+        exitcode = process.wait() # 0 means success
+        if exitcode:
+            raise RuntimeError(f"Could not run {" ".join(command)}")
 
     def instance_stopped(self, name: str) -> bool:
         assert self.instance_exists(name)
@@ -73,22 +72,7 @@ class Incus:
         os.sync()
 
     def execute(self, instance_name: str, *args: str) -> None:
-        self._run("exec", instance_name, "--", *args, capture=False)
-        return
-        proc = self._run_popen("exec", instance_name, "--", *args)
-
-        def print_io(stream: IO[Any]):
-            for line in stream:
-                print(" In container |\t", line.strip())
-
-        while proc.poll() is None:
-            assert proc.stdout is not None
-            assert proc.stderr is not None
-            print_io(proc.stderr)
-            print_io(proc.stdout)
-
-        if proc.returncode:
-            raise RuntimeError(f"Could not run incus {args}")
+        self._run_logged_prefixed("exec", instance_name, "--", *args, prefix=" In container |\t")
 
     def publish(
         self, instance_name: str, image_alias: str, properties: dict[str, str]
@@ -112,11 +96,12 @@ incus = Incus()
 
 
 class ImageBuilder:
-    def __init__(self, debian_version: str, distribution: str, ss_repo: Path) -> None:
+    def __init__(self, debian_version: str, distribution: str, ss_repo: Path, log: Optional[Path]) -> None:
         self.debian_version = debian_version
         self.distribution = distribution
         self.instance_name = f"ynh-builder-{self.debian_version}-{self.distribution}"
         self.ss_repo = ss_repo
+        self.log = log
 
     def image_alias(self, short_name: str) -> str:
         return f"ynh-{short_name}-{self.debian_version}-{self.distribution}-base"
@@ -134,7 +119,7 @@ class ImageBuilder:
         if not incus.instance_exists(self.instance_name):
             return
 
-        print("Deleting existing container...")
+        logging.info("Deleting existing container...")
         if not incus.instance_stopped(self.instance_name):
             incus.instance_stop(self.instance_name)
         incus.instance_delete(self.instance_name)
@@ -150,7 +135,7 @@ class ImageBuilder:
         image_descr = f"YunoHost {self.debian_version} {self.distribution} ynh-{short_name} {arch} ({now:%Y%m%d})"
 
         if incus.image_exists(image_alias):
-            print(f"Deleting already existing image {image_alias}")
+            logging.info(f"Deleting already existing image {image_alias}")
             incus.image_delete(image_alias)
 
         if not incus.instance_stopped(self.instance_name):
@@ -167,7 +152,7 @@ class ImageBuilder:
             "architecture": arch,
         }
 
-        print(f"Publishing {image_alias}...")
+        logging.info(f"Publishing {image_alias}...")
         incus.publish(self.instance_name, image_alias, properties)
 
         images_path = SCRIPT_DIR / "images"
@@ -187,27 +172,26 @@ class ImageBuilder:
             incus.execute(self.instance_name, "dhclient", "eth0")
 
     def put_file(self, file: Path, dest_file: str) -> None:
-        print(f"Pushing {file} to {dest_file}...")
+        logging.info(f"Pushing {file} to {dest_file}...")
         incus.push_file(self.instance_name, file, dest_file)
 
     def run(self) -> None:
         incus.execute(self.instance_name, "ls", "-lah")
 
     def run_script(self, name: str) -> None:
-        gitbranch = "dev" if self.debian_version == "bullseye" else self.debian_version
-
-        # Ensure the file is deleted
-        incus.execute(self.instance_name, "rm", "-f", "/root/recipes")
         self.put_file(SCRIPT_DIR / "recipes", "/root/recipes")
-        incus.execute(
-            self.instance_name,
+
+        gitbranch = "dev" if self.debian_version == "bullseye" else self.debian_version
+        command = [
             "env",
             f"RELEASE={self.distribution}",
             f"DEBIAN_VERSION={self.debian_version}",
             f"gitbranch={gitbranch}",
             "/root/recipes",
-            name,
-        )
+            name
+        ]
+        logging.info("Running: %s...", " ".join(command))
+        incus.execute(self.instance_name, *command)
 
         incus.execute(self.instance_name, "rm", "/root/recipes")
 
@@ -221,6 +205,13 @@ def main():
         required=False,
         help="If passed, the path to the simplestreams repository",
     )
+    parser.add_argument(
+        "-l",
+        "--log",
+        type=Path,
+        required=False,
+        help="If passed, logs will be printed to this file"
+    )
 
     parser.add_argument("debian_version", type=str, choices=["bullseye", "bookworm"])
     parser.add_argument(
@@ -231,7 +222,21 @@ def main():
     )
     args = parser.parse_args()
 
-    builder = ImageBuilder(args.debian_version, args.distribution, args.output)
+    logger = logging.getLogger()
+    if args.log:
+        logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler(args.log)
+        fh.setLevel(logging.DEBUG)
+        logger.addHandler(fh)
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        logger.addHandler(console)
+    else:
+        logger.setLevel(logging.DEBUG)
+
+    logging.debug("Starting at %s", datetime.now())
+
+    builder = ImageBuilder(args.debian_version, args.distribution, args.output, args.log)
 
     if args.variants == "build-and-lint":
         builder.start()
