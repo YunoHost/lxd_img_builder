@@ -104,7 +104,7 @@ class ImageBuilder:
         self.log = log
 
     def image_alias(self, short_name: str) -> str:
-        return f"ynh-{short_name}-{self.debian_version}-{self.distribution}-base"
+        return f"yunohost/{self.debian_version}-{self.distribution}/{short_name}"
 
     def start(self, base_image_name: Optional[str] = None) -> None:
         if base_image_name is None:
@@ -145,10 +145,8 @@ class ImageBuilder:
         properties = {
             "description": image_descr,
             "os": "yunohost",
-            "release": self.debian_version,
-            "variant": f"{self.distribution}-{short_name}",
-            "ynh-release": self.distribution,
-            "stage": f"ynh-{short_name}",
+            "release": f"{self.debian_version}-{self.distribution}",
+            "variant": short_name,
             "architecture": arch,
         }
 
