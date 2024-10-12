@@ -80,8 +80,8 @@ class Incus:
         properties_list = [f"{key}={value}" for key, value in properties.items()]
         self._run("publish", instance_name, "--alias", image_alias, *properties_list)
 
-    def image_export(self, image_alias: str, target_dir: Path) -> None:
-        self._run("image", "export", image_alias, image_alias, cwd=target_dir)
+    def image_export(self, image_alias: str, image_target: str, target_dir: Path) -> None:
+        self._run("image", "export", image_alias, image_target, cwd=target_dir)
 
     def image_exists(self, alias: str) -> bool:
         res = yaml.safe_load(self._run("image", "list", "-f", "yaml"))
@@ -157,7 +157,7 @@ class ImageBuilder:
         images_path.mkdir(exist_ok=True)
         image_alias_underscorified = image_alias.replace("/", "_")
         image_file = images_path / f"{image_alias_underscorified}.tar.gz"
-        incus.image_export(image_alias, images_path)
+        incus.image_export(image_alias, image_alias_underscorified, images_path)
 
         subprocess.run(
             ["incus-simplestreams", "add", image_file],
