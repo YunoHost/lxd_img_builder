@@ -155,7 +155,8 @@ class ImageBuilder:
 
         images_path = SCRIPT_DIR / "images"
         images_path.mkdir(exist_ok=True)
-        image_file = images_path / f"{image_alias}.tar.gz"
+        image_alias_underscorified = image_alias.replace("/", "_")
+        image_file = images_path / f"{image_alias_underscorified}.tar.gz"
         incus.image_export(image_alias, images_path)
 
         subprocess.run(
