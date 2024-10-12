@@ -43,7 +43,7 @@ class Incus:
                 logging.debug("%s%s", prefix, line.decode("utf-8").rstrip("\n"))
         exitcode = process.wait() # 0 means success
         if exitcode:
-            raise RuntimeError(f"Could not run {" ".join(command)}")
+            raise RuntimeError(f"Could not run {' '.join(command)}")
 
     def instance_stopped(self, name: str) -> bool:
         assert self.instance_exists(name)
