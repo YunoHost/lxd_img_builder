@@ -4,5 +4,6 @@ gitlab_runner/
 *_control
 
 images/
+logs/
 
 .pdm*

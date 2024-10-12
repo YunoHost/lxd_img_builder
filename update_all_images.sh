@@ -4,6 +4,8 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 REPO="$1"
 
+mkdir -p "$SCRIPT_DIR/logs"
+
 status=0
 
 update_image() {
