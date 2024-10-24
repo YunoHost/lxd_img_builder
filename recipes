@@ -60,6 +60,11 @@ function before_install()
     apt_yes upgrade
     install_gitlab_runner_light
 
+    if [[ -z "${gitbranch:-}" ]]; then
+        echo "gitbranch must be defined when calling $0!"
+        exit 1
+    fi
+
     # Download the YunoHost install script
     INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
     curl "$INSTALL_SCRIPT" -o install.sh
