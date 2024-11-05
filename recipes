@@ -33,13 +33,14 @@ function build_and_lint()
     # a) building .debs
     TOOLING_APT_DEPENDENCIES=(
         devscripts build-essential debhelper dpkg-dev dh-python wget hub
-        python3 python3-all python3-yaml python3-jinja2 python3-pip python-is-python3
+        python3 python3-all python-is-python3 python3-pip
+        python3-yaml python3-toml python3-jinja2 python3-openssl
     )
     apt_yes install "${TOOLING_APT_DEPENDENCIES[@]}"
 
     # b) running tox, black, mypy, flake8, i18n string consistency check, bot sending PRs (actually this one is 'hub' in apt dependency right before)
     TOOLING_PIP_DEPENDENCIES=(
-        pyOpenSSL ansi2html toml jinja2
+        ansi2html
         types-ipaddress types-enum34 types-cryptography types-toml
         types-requests types-PyYAML types-pyOpenSSL types-mock
     )
@@ -148,18 +149,22 @@ function core_tests()
     sed -i '/admin_strength/d' /etc/yunohost/settings.yml
     sed -i '/user_strength/d' /etc/yunohost/settings.yml
 
-    CORE_TESTS_APT_DEPENDENCIES=(python3-pip)
-    CORE_TESTS_PIP_DEPENCENDIES=(mock pip pyOpenSSL pytest pytest-cov pytest-mock pytest-sugar requests-mock "packaging<22")
+    CORE_TESTS_APT_DEPENDENCIES=(
+        python3-pip python3-packaging python3-openssl
+        python3-mock python3-requests-mock
+        python3-pytest python3-pytest-cov python3-pytest-mock python3-pytest-sugar
+    )
+    # CORE_TESTS_PIP_DEPENCENDIES=( )
 
     if [[ "$DEBIAN_VERSION" == "bookworm" ]]; then
         # We add php8.2-cli, mariadb-client and mariadb-server to the dependencies for test_app_resources
         CORE_TESTS_APT_DEPENDENCIES+=(php8.2-cli mariadb-client mariadb-server)
-        CORE_TESTS_PIP_DEPENCENDIES+=(--break-system-packages)
+        # CORE_TESTS_PIP_DEPENCENDIES+=(--break-system-packages)
     fi
 
     apt_yes update
     apt_yes install "${CORE_TESTS_APT_DEPENDENCIES[@]}"
-    python3 -m pip install -U "${CORE_TESTS_PIP_DEPENCENDIES[@]}"
+    # python3 -m pip install -U "${CORE_TESTS_PIP_DEPENCENDIES[@]}"
 }
 
 function slimify()
