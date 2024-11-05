@@ -161,17 +161,18 @@ class ImageBuilder:
         logging.info(f"Publishing {image_alias}...")
         incus.publish(self.instance_name, image_alias, properties)
 
-        images_path = SCRIPT_DIR / "images"
-        images_path.mkdir(exist_ok=True)
-        image_alias_underscorified = image_alias.replace("/", "_")
-        image_file = images_path / f"{image_alias_underscorified}.tar.gz"
-        incus.image_export(image_alias, image_alias_underscorified, images_path)
+        if self.ss_repo:
+            images_path = SCRIPT_DIR / "images"
+            images_path.mkdir(exist_ok=True)
+            image_alias_underscorified = image_alias.replace("/", "_")
+            image_file = images_path / f"{image_alias_underscorified}.tar.gz"
+            incus.image_export(image_alias, image_alias_underscorified, images_path)
 
-        subprocess.run(
-            ["incus-simplestreams", "add", image_file],
-            cwd=self.ss_repo,
-        )
-        image_file.unlink()
+            subprocess.run(
+                ["incus-simplestreams", "add", image_file],
+                cwd=self.ss_repo,
+            )
+            image_file.unlink()
 
         if should_restart:
             incus.instance_start(self.instance_name)
