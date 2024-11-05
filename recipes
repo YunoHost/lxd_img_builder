@@ -181,7 +181,7 @@ function demo()
 
     APPS=(hextris nextcloud opensondage roundcube wallabag2 wordpress etherpad_mypads vaultwarden my_webapp freshrss yeswiki diagramsnet)
     for APP in "${APPS[@]}"; do
-        yunohost app install $APP --force --args "domain=$DOMAIN&init_main_permission=visitors&admin=demo&path=/$APP&password=demo" || true
+        yunohost app install "$APP" --force --args "domain=$DOMAIN&init_main_permission=visitors&admin=demo&path=/$APP&password=demo" || true
     done
 
     # TODO : tweak the user portal and admin to have the demo credentials displayed etc
