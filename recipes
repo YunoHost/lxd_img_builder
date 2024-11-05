@@ -179,9 +179,8 @@ function demo()
 
     yunohost tools postinstall --domain "$DOMAIN" --password "demo" --username "demo" --fullname "Demo user" --force-diskspace
 
-    APPS="hextris nextcloud opensondage roundcube wallabag2 wordpress etherpad_mypads vaultwarden my_webapp freshrss yeswiki diagramsnet"
-    for APP in $APPS
-    do
+    APPS=(hextris nextcloud opensondage roundcube wallabag2 wordpress etherpad_mypads vaultwarden my_webapp freshrss yeswiki diagramsnet)
+    for APP in "${APPS[@]}"; do
         yunohost app install $APP --force --args "domain=$DOMAIN&init_main_permission=visitors&admin=demo&path=/$APP&password=demo" || true
     done
 
