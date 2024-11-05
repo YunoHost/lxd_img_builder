@@ -24,8 +24,7 @@ for variant in build-and-lint before-install all; do
     update_image bullseye unstable "$variant"
     update_image bullseye testing "$variant"
 
-    # Bookworm only supports unstable, testing
-    # update_image bookworm stable "$variant"
+    update_image bookworm stable "$variant"
     update_image bookworm unstable "$variant"
     update_image bookworm testing "$variant"
 done
