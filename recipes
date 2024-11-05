@@ -68,7 +68,7 @@ function before_install()
 
     # Download the YunoHost install script
     INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
-    curl "$INSTALL_SCRIPT" -o install.sh
+    curl -L -s "$INSTALL_SCRIPT" -o install.sh
 
     # Disable the install of yunohost itself, because we need this for the core CI
     sed -i -E 's/(step\s+install_yunohost_packages)/#\1/' install.sh
@@ -118,7 +118,8 @@ function dev()
     install_gitlab_runner_light
 
     # Download and run the YunoHost install script
-    curl "https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION" -o install.sh
+    INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
+    curl -L -s "$INSTALL_SCRIPT" -o install.sh
     chmod +x install.sh
     ./install.sh -a -d "$RELEASE"
     rm install.sh
@@ -165,6 +166,30 @@ function core_tests()
     apt_yes update
     apt_yes install "${CORE_TESTS_APT_DEPENDENCIES[@]}"
     # python3 -m pip install -U "${CORE_TESTS_PIP_DEPENCENDIES[@]}"
+}
+
+function demo()
+{
+    DOMAIN="demo.yunohost.org"
+
+    INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
+    curl -L -s "$INSTALL_SCRIPT" -o install.sh
+    chmod +x install.sh
+    ./install.sh -a -d "$RELEASE"
+    rm install.sh
+
+    # Disable password strength check for convenience on the app CI
+    echo 'admin_strength: -1' >> /etc/yunohost/settings.yml
+    echo 'user_strength: -1' >> /etc/yunohost/settings.yml
+
+    yunohost tools postinstall --domain "$DOMAIN" --password "demo" --username "demo" --fullname "Demo user" --force-diskspace
+
+    APPS=(hextris nextcloud opensondage roundcube wallabag2 wordpress etherpad_mypads vaultwarden my_webapp freshrss yeswiki diagramsnet)
+    for APP in "${APPS[@]}"; do
+        yunohost app install "$APP" --force --args "domain=$DOMAIN&init_main_permission=visitors&admin=demo&path=/$APP&password=demo" || true
+    done
+
+    # TODO : tweak the user portal and admin to have the demo credentials displayed etc
 }
 
 function slimify()
