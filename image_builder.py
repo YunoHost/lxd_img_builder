@@ -189,7 +189,7 @@ class ImageBuilder:
     def run_script(self, name: str) -> None:
         self.put_file(SCRIPT_DIR / "recipes", "/root/recipes")
 
-        gitbranch = "dev" if self.debian_version == "bullseye" else self.debian_version
+        gitbranch = "dev" if self.debian_version == "bookworm" else self.debian_version
         command = [
             "env",
             f"RELEASE={self.distribution}",

@@ -84,9 +84,9 @@ function before_install()
     rm install.sh
 
     # Extract the dependencies from control files
-    curl -L "https://raw.githubusercontent.com/YunoHost/yunohost/$gitbranch/debian/control" -o yunohost_control
-    curl -L "https://raw.githubusercontent.com/YunoHost/moulinette/$gitbranch/debian/control" -o moulinette_control
-    curl -L "https://raw.githubusercontent.com/YunoHost/ssowat/$gitbranch/debian/control" -o ssowat_control
+    curl -s -L "https://raw.githubusercontent.com/YunoHost/yunohost/$gitbranch/debian/control" -o yunohost_control
+    curl -s -L "https://raw.githubusercontent.com/YunoHost/moulinette/$gitbranch/debian/control" -o moulinette_control
+    curl -s -L "https://raw.githubusercontent.com/YunoHost/ssowat/$gitbranch/debian/control" -o ssowat_control
 
     # To extract the dependencies, we want to retrieve the lines between "^Dependencies:" and the new line that doesn't
     # start with a space (exclusively) . Then, we remove ",", then we remove the version specifiers "(>= X.Y)",
