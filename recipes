@@ -67,7 +67,7 @@ function before_install()
 
     # Download the YunoHost install script
     INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
-    curl "$INSTALL_SCRIPT" -o install.sh
+    curl -L -s "$INSTALL_SCRIPT" -o install.sh
 
     # Disable the install of yunohost itself, because we need this for the core CI
     sed -i -E 's/(step\s+install_yunohost_packages)/#\1/' install.sh
@@ -117,7 +117,8 @@ function dev()
     install_gitlab_runner_light
 
     # Download and run the YunoHost install script
-    curl "https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION" -o install.sh
+    INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
+    curl -L -s "$INSTALL_SCRIPT" -o install.sh
     chmod +x install.sh
     ./install.sh -a -d "$RELEASE"
     rm install.sh
@@ -166,7 +167,8 @@ function demo()
 {
     DOMAIN="demo.yunohost.org"
 
-    curl "https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION" -o install.sh
+    INSTALL_SCRIPT="https://raw.githubusercontent.com/YunoHost/install_script/main/$DEBIAN_VERSION"
+    curl -L -s "$INSTALL_SCRIPT" -o install.sh
     chmod +x install.sh
     ./install.sh -a -d "$RELEASE"
     rm install.sh
