@@ -124,7 +124,7 @@ def main():
         help="If passed, logs will be printed to this file",
     )
 
-    parser.add_argument("debian_version", type=str, choices=["bullseye", "bookworm"])
+    parser.add_argument("debian_version", type=str, choices=["bullseye", "bookworm", "trixie"])
     parser.add_argument(
         "distribution", type=str, choices=["stable", "testing", "unstable"]
     )
