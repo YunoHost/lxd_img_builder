@@ -182,7 +182,7 @@ function demo()
     echo 'admin_strength: -1' >> /etc/yunohost/settings.yml
     echo 'user_strength: -1' >> /etc/yunohost/settings.yml
 
-    yunohost tools postinstall --domain "$DOMAIN" --password "demo" --username "demo" --fullname "Demo user" --force-diskspace
+    yunohost tools postinstall --domain "$DOMAIN" --password "demo" --username "demo" --fullname "Demo user"
 
     APPS=(hextris nextcloud opensondage roundcube wallabag2 wordpress etherpad_mypads vaultwarden my_webapp freshrss yeswiki diagramsnet)
     for APP in "${APPS[@]}"; do
