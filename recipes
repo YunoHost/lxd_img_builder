@@ -191,6 +191,8 @@ function demo()
 
     sed -i 's@<head>@<head><style>main > form::before { content: "Login: demo\\APassword: demo"; display: block; text-align: center; white-space: break-spaces; margin-bottom: 1em; }</style>@g' /usr/share/yunohost/portal/{index.html,login/index.html}
     sed -i 's@<head>@<head><style>#login-form::before { content: "Login: demo\\APassword: demo"; display: block; text-align: center; white-space: break-spaces; margin-bottom: 1em; }</style>@g' /usr/share/yunohost/admin/index.html
+
+    touch /etc/yunohost/keep_yunohost_api
 }
 
 function slimify()
@@ -237,8 +239,15 @@ function slimify()
     systemctl -q disable logrotate.timer --now || true
     systemctl -q disable phpsessionclean.timer --now || true
     systemctl -q disable systemd-tmpfiles-clean.timer --now || true
-    systemctl -q disable yunohost-api --now || true
     systemctl -q disable yunoprompt --now || true
+
+    # Ugly hack for demo
+    if [ -e /etc/yunohost/keep_yunohost_api ];
+    then
+        rm /etc/yunohost/keep_yunohost_api
+    else
+        systemctl -q disable yunohost-api --now || true
+    fi
 }
 
 "$1"
