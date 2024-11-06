@@ -11,9 +11,9 @@ from .incus import Incus
 class SimpleStreams:
     def __init__(self, incus: Incus, path: Path, cachedir: Path) -> None:
         self.incus = incus
-        self.path = path
+        self.path = path.resolve()
         self.path.mkdir(exist_ok=True)
-        self.cachedir = cachedir
+        self.cachedir = cachedir.resolve()
         self.cachedir.mkdir(exist_ok=True)
 
     def import_from_incus(self, name: str, alias: str) -> None:
