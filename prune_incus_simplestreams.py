@@ -7,6 +7,7 @@ from incuslib import Incus, SimpleStreams
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
