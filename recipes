@@ -189,7 +189,8 @@ function demo()
         yunohost app install "$APP" --force --args "domain=$DOMAIN&init_main_permission=visitors&admin=demo&path=/$APP&password=demo" || true
     done
 
-    # TODO : tweak the user portal and admin to have the demo credentials displayed etc
+    sed -i 's@<head>@<head><style>main > form::before { content: "Login: demo\\APassword: demo"; display: block; text-align: center; white-space: break-spaces; margin-bottom: 1em; }</style>@g' /usr/share/yunohost/portal/{index.html,login/index.html}
+    sed -i 's@<head>@<head><style>#login-form::before { content: "Login: demo\\APassword: demo"; display: block; text-align: center; white-space: break-spaces; margin-bottom: 1em; }</style>@g' /usr/share/yunohost/admin/index.html
 }
 
 function slimify()
