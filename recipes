@@ -123,8 +123,6 @@ function dev()
     chmod +x install.sh
     ./install.sh -a -d "$RELEASE"
     rm install.sh
-
-    apt_yes autoremove vim
 }
 
 function appci()
