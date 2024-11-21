@@ -155,11 +155,16 @@ function core_tests()
     )
     # CORE_TESTS_PIP_DEPENCENDIES=( )
 
-    if [[ "$DEBIAN_VERSION" == "bookworm" ]]; then
-        # We add php8.2-cli, mariadb-client and mariadb-server to the dependencies for test_app_resources
-        CORE_TESTS_APT_DEPENDENCIES+=(php8.2-cli mariadb-client mariadb-server)
-        # CORE_TESTS_PIP_DEPENCENDIES+=(--break-system-packages)
-    fi
+    case "$DEBIAN_VERSION" in
+        bookworm)
+            # We add php8.2-cli, mariadb-client and mariadb-server to the dependencies for test_app_resources
+            CORE_TESTS_APT_DEPENDENCIES+=(php8.2-cli mariadb-client mariadb-server)
+            ;;
+        trixie)
+            # We add php8.2-cli, mariadb-client and mariadb-server to the dependencies for test_app_resources
+            CORE_TESTS_APT_DEPENDENCIES+=(php8.2-cli mariadb-client mariadb-server)
+            ;;
+    esac
 
     apt_yes update
     apt_yes install "${CORE_TESTS_APT_DEPENDENCIES[@]}"
